@@ -171,12 +171,44 @@ Write the following content verbatim to `.autoresearch/ar.py` using the `Write` 
 Resolves the plugin's lib/ directory, injects it on sys.path, and delegates
 to ar.cli.main(). Runs under the target project's uv-managed venv so torch,
 wandb, accelerate, etc. are all resolvable.
+
+Deps `jinja2` and `psutil` are not part of typical ML project dependencies, so
+if they're missing in the active interpreter, this shim re-exec's itself via
+`uv run --with jinja2 --with psutil python <self> <args>`. The re-exec is
+self-suppressing (AR_SHIM_BOOTSTRAPPED sentinel) to avoid infinite loops.
 """
 from __future__ import annotations
 
 import os
 import sys
 from pathlib import Path
+
+
+def _bootstrap_deps_if_needed() -> None:
+    if os.environ.get("AR_SHIM_BOOTSTRAPPED") == "1":
+        return
+    missing: list[str] = []
+    try:
+        import jinja2  # noqa: F401
+    except ImportError:
+        missing.append("jinja2")
+    try:
+        import psutil  # noqa: F401
+    except ImportError:
+        missing.append("psutil")
+    if not missing:
+        return
+    # Re-exec under `uv run --with ...` so the missing deps are injected
+    # ephemerally for this invocation without mutating the target project's
+    # pyproject.toml. We mark AR_SHIM_BOOTSTRAPPED=1 in the child env to
+    # prevent recursion if uv still can't satisfy the deps.
+    with_flags: list[str] = []
+    for pkg in missing:
+        with_flags.extend(["--with", pkg])
+    new_env = dict(os.environ)
+    new_env["AR_SHIM_BOOTSTRAPPED"] = "1"
+    cmd = ["uv", "run", *with_flags, "python", __file__, *sys.argv[1:]]
+    os.execvpe("uv", cmd, new_env)
 
 
 def _resolve_plugin_lib() -> Path:
@@ -204,6 +236,7 @@ def _resolve_plugin_lib() -> Path:
     )
 
 
+_bootstrap_deps_if_needed()
 sys.path.insert(0, str(_resolve_plugin_lib()))
 from ar.cli import main  # noqa: E402
 
