@@ -20,6 +20,18 @@ When preflight asks "resume mode?" because `runs/` is non-empty, the options hav
 - **"revert to best and continue"** — `ar` copies `runs/{best_id}/train.py` → `{expr}/train.py` before step 1. Iteration 1 starts from the known-good baseline. Appropriate when the previous session crashed and the working tree is suspect.
 - **"start fresh"** — destructive. Wipes `runs/`, `best.json`, `best_ckpt/`, `results.tsv` (resets to header row only). Requires a second AskUserQuestion confirmation. Use only when the expr's semantics changed (e.g. the user rewrote program.md).
 
+## Metric extraction — backend-agnostic
+
+Regardless of metric backend (wandb / tensorboard / log / custom / auto), step 5's `result.json` has the same schema. The backend only affects HOW the primary-metric value is obtained; WHAT lands in `primary.value` is identical:
+
+- **wandb**: `wandb_pointer.json` is written by train.py's AR-SAVE block during the run; `ar` reads `wandb/run-{id}/files/wandb-summary.json` post-exit and picks the user-configured metric key.
+- **tensorboard**: `ar` expands the configured events glob (e.g. `outputs/*/tensorboard/events.out.tfevents.*`), picks the newest matching file, and reads the last scalar event for the user-configured tag name.
+- **log**: `ar` regex-scans `run.log` (the captured subprocess stdout+stderr) and takes the last match's numeric group for the user-configured metric name.
+- **custom**: `ar` evaluates the user-supplied snippet with `run_dir` and `run_log_text` in scope; expects a `dict[str, float]` return.
+- **auto**: `ar` tries wandb → tensorboard → log in order; the first backend that returns a non-empty result wins for that run.
+
+The primary-metric-missing case surfaces identically regardless of backend: `primary.value=null`, `status=invalid`, `verdict=revert`. The loop's reaction to this outcome (step 5 interpretation table in SKILL.md) does not vary.
+
 ## `result.json` — worked examples
 
 ### Advance

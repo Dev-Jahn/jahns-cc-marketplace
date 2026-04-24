@@ -1,31 +1,45 @@
-"""train.py — WRAPPER MODE for `{{ expr_slug }}` (entry_pattern=argparse-cli).
+"""train.py — HYDRA WRAPPER MODE for `{{ expr_slug }}` (entry_pattern=hydra).
 
 This is the ONLY file the agent edits. It is a thin wrapper around the host
-project's real training script, which is an argparse-CLI entrypoint (i.e. a
-module whose `if __name__ == "__main__":` block parses argv and runs training).
-The wrapper:
+project's Hydra-powered training entrypoint (a module whose `main` function is
+decorated with `@hydra.main(config_path=..., config_name=...)`). The wrapper:
 
-  1. Loads the agent's `CLI_OVERRIDES` dict below (the only block the agent
-     edits per run).
+  1. Loads the agent's `CLI_OVERRIDES` dict below. Keys are Hydra-style dotted
+     config paths (e.g. `trainer.max_epochs`, `model.learning_rate`, or with
+     a leading `+` to add a new key that isn't in the YAML config, or `~` to
+     delete one).
   2. Optionally resolves a parent checkpoint via `prepare.resume_ckpt_path()`
-     and injects the resume flag / `AR_RESUME_CKPT` env var.
-  3. Rebuilds `sys.argv` from `CLI_OVERRIDES` and invokes
-     `runpy.run_module("{{ entry_main_module }}", run_name="__main__")` so the
-     host script runs as if it had been called directly from the command line.
-  4. After the host script returns (or raises SystemExit), the frozen AR-SAVE
-     block writes `wandb_pointer.json` and copies / links the host's saved
-     checkpoint into `$AR_RUN_DIR/state.pt`.
+     and injects the resume flag / `AR_RESUME_CKPT` env var. In Hydra the
+     resume flag is typically something like `trainer.resume_from_checkpoint`
+     and is added to the overrides dict verbatim.
+  3. Rebuilds `sys.argv` from `CLI_OVERRIDES` using Hydra override syntax
+     (no `--` prefix; `key=value` tokens) and invokes
+     `importlib.import_module("{{ entry_main_module }}").main()`. Hydra's
+     decorator reads `sys.argv[1:]` to build the config.
+  4. After the host script returns, the frozen AR-SAVE block writes
+     `wandb_pointer.json` and copies / links the host's saved checkpoint
+     into `$AR_RUN_DIR/state.pt`.
+
+### CLI_OVERRIDES syntax (Hydra)
+
+Unlike argparse-cli wrapper mode, the renderer emits Hydra-style tokens:
+
+  - `{"foo.bar": "baz"}`          -> `foo.bar=baz`         (override existing)
+  - `{"trainer.max_epochs": 10}`  -> `trainer.max_epochs=10`
+  - `{"trainer.gpus": [0, 1]}`    -> `trainer.gpus=[0,1]`  (Hydra list syntax)
+  - `{"model.dropout": None}`     -> `model.dropout=null`  (explicit null)
+  - `{"+new.key": "val"}`         -> `+new.key=val`        (add — key prefix)
+  - `{"~obsolete.key": None}`     -> `~obsolete.key`       (delete — key prefix)
+
+The `+` / `~` prefixes on the KEY are preserved verbatim in the output token
+(no leading `--`). Values that are dicts are rendered as Hydra/OmegaConf
+mapping literals via `json.dumps`. Booleans become `true`/`false`.
 
 ### Rank safety note
 
-`ar` launches this wrapper via the runner spec in program.md (typically
-`accelerate launch ...`), so this file is executed on every rank. Rank-safe
-behavior (metric logging on rank 0, DDP init, checkpoint save) is the host
-script's responsibility — wrapper-mode does not add rank gating itself. The
-AR-SAVE block below writes `wandb_pointer.json` only if `wandb.run` is bound,
-which `wandb.init()` sets on every rank that calls it — this is fine because
-the pointer write is idempotent across ranks (same run_id on every rank under
-accelerate's wandb integration).
+Same as argparse-cli mode: `ar` launches this wrapper via the runner spec
+(typically `accelerate launch ...` or plain `python`), so this file may be
+executed on every rank. Rank-safe behavior is the host script's responsibility.
 
 Mutation scope (advisory; do not write outside this file):
 {% for item in mutation_scope %}
@@ -66,12 +80,16 @@ os.environ["AR_RUN_DIR"] = str(AR_RUN_DIR)
 
 RUN_NOTE = ""  # one-line rationale; surfaced in results.tsv
 
-# CLI_OVERRIDES is the dict of flags passed to the host entrypoint. Keys are
-# argparse long-flag names (without the leading `--`). Values are:
-#   - str / int / float / None  -> rendered as `--key=value` (None is skipped)
-#   - bool True                 -> rendered as presence-only `--key`
-#   - bool False                -> skipped entirely (argparse store_true default)
-#   - list / tuple              -> rendered as repeated `--key=v1 --key=v2 ...`
+# CLI_OVERRIDES is the dict of Hydra overrides passed to the host entrypoint.
+# Keys are Hydra dotted paths (no `--` prefix). Values may be:
+#   - str / int / float          -> rendered as `key=value`
+#   - bool                       -> rendered as `key=true` / `key=false`
+#   - None                       -> rendered as `key=null` (Hydra convention)
+#   - list / tuple               -> rendered as `key=[v1,v2,...]` (Hydra list)
+#   - dict                       -> rendered as `key=<json-obj>` (OmegaConf mapping)
+#
+# Raw-prefix keys: `+foo.bar` adds a key that isn't in the YAML config;
+# `~foo.bar` deletes a key (value is ignored for `~`).
 #
 # The initial dict below was captured from the project during /autoresearch:setup.
 # Edit freely per iteration; the AR-RESUME block may append one entry (the
@@ -82,10 +100,9 @@ CLI_OVERRIDES = {{ cli_args_json | safe }}
 # MONKEY-PATCH SANDBOX — apply targeted overrides to host-project modules.
 # The subprocess is fresh each run (spawned via `uv run`), so patches can
 # never leak into `ar`'s own bookkeeping. Import the host module FIRST, then
-# patch, then fall through to the runpy invocation below.
+# patch, then fall through to the invocation below.
 #
 # Example:
-#   import {{ entry_main_module.split('.')[0] if entry_main_module and '.' in entry_main_module else (entry_main_module or 'host_project') }}
 #   from {{ entry_main_module.rsplit('.', 1)[0] if entry_main_module and '.' in entry_main_module else 'host_project.module' }} import SomeClass
 #   original_forward = SomeClass.forward
 #   def patched_forward(self, x): ...
@@ -108,7 +125,9 @@ if _AR_RESUME_PATH is not None and _AR_RESUME_PATH.is_file():
     {% if resume_flag_name %}
     # Resume flag was declared during setup — inject it into CLI_OVERRIDES
     # unless the agent has already set it explicitly above (explicit override
-    # wins, so the agent can point at a different ckpt if desired).
+    # wins, so the agent can point at a different ckpt if desired). In Hydra
+    # mode the flag is a dotted config path, not a `--flag`; typical examples:
+    # `trainer.resume_from_checkpoint`, `ckpt_path`.
     if "{{ resume_flag_name }}" not in CLI_OVERRIDES:
         CLI_OVERRIDES["{{ resume_flag_name }}"] = str(_AR_RESUME_PATH)
     {% else %}
@@ -125,55 +144,72 @@ else:
 # ======================================================================
 
 # ======================================================================
-# BODY — rebuild sys.argv from CLI_OVERRIDES and runpy-invoke the host
-# entrypoint. Do not edit unless you know what you're doing — the CLI arg
-# serialization below is the contract between the agent and the host.
+# BODY — rebuild sys.argv from CLI_OVERRIDES (Hydra syntax) and invoke the
+# host entrypoint. Do not edit unless you know what you're doing — the CLI
+# arg serialization below is the contract between the agent and Hydra.
 # ======================================================================
 
 
-def _render_cli_argv(overrides: dict) -> list[str]:
-    """Serialize CLI_OVERRIDES into an argv list for sys.argv."""
+def _render_hydra_value(value) -> str:
+    """Serialize a Python value into a Hydra CLI token fragment (RHS of =)."""
+    if value is None:
+        # Hydra's `null` literal — drops the key's value (but the key still
+        # appears in the final config). For full deletion, use a `~key` prefix.
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, tuple)):
+        # Hydra list syntax: [v1,v2,v3]. Use json.dumps on each element to
+        # get quoted strings where needed, then strip the outer brackets and
+        # whitespace so we match Hydra's terse format.
+        inner = ",".join(_render_hydra_value(v) for v in value)
+        return f"[{inner}]"
+    if isinstance(value, dict):
+        # Hydra/OmegaConf mapping literal. json.dumps is already Hydra-compatible
+        # for the common cases (double-quoted keys + scalar values).
+        return json.dumps(value, separators=(",", ":"))
+    # string / everything else
+    return str(value)
+
+
+def _render_hydra_argv(overrides: dict) -> list[str]:
+    """Serialize CLI_OVERRIDES into a Hydra argv list (no `--` prefixes).
+
+    Key prefixes are preserved verbatim:
+      - `foo.bar`  -> override (must exist in the YAML config)
+      - `+foo.bar` -> add (key doesn't need to exist)
+      - `~foo.bar` -> delete (value is ignored)
+    """
     argv: list[str] = []
     for key, value in overrides.items():
-        if value is None:
+        key = str(key)
+        if key.startswith("~"):
+            # Deletion — Hydra ignores RHS entirely.
+            argv.append(key)
             continue
-        if isinstance(value, bool):
-            if value:
-                argv.append(f"--{key}")
-            # False -> omit entirely (argparse store_true default)
-            continue
-        if isinstance(value, (list, tuple)):
-            for item in value:
-                if item is None:
-                    continue
-                argv.append(f"--{key}={item}")
-            continue
-        # scalars (str, int, float) -> --key=value. argparse accepts this
-        # form for any argument that takes a value.
-        argv.append(f"--{key}={value}")
+        rendered_value = _render_hydra_value(value)
+        argv.append(f"{key}={rendered_value}")
     return argv
 
 
 _ENTRY_MAIN_MODULE = {{ entry_main_module | tojson }}
 if not _ENTRY_MAIN_MODULE:
     raise RuntimeError(
-        "train_wrapper.py was rendered without entry_main_module; "
+        "train_hydra.py was rendered without entry_main_module; "
         "re-run /autoresearch:setup with --entry-main-module set."
     )
 
-_argv = _render_cli_argv(CLI_OVERRIDES)
-# sys.argv[0] mirrors how `python -m <module>` exposes the module path.
+_argv = _render_hydra_argv(CLI_OVERRIDES)
+# Hydra's @hydra.main reads sys.argv[1:]; sys.argv[0] mirrors `python -m <module>`.
 sys.argv = [_ENTRY_MAIN_MODULE, *_argv]
 
-# Invocation strategy — two-step with fallback:
-#   1. Preferred: `from <module> import main; main()`. This preserves the
-#      module's own __name__ (not "__main__"), which is critical for HF
-#      Trainer's HfArgumentParser + `from __future__ import annotations`
-#      codebases where get_type_hints() evaluates dataclass field types
-#      against the defining module's globals. runpy.run_module rebinds the
-#      namespace to "__main__" and breaks that resolution.
-#   2. Fallback: runpy.run_module(..., run_name="__main__"). Needed for
-#      scripts whose entry point is top-level code (no `def main()`).
+# Invocation strategy — import the module and call `main()` directly (the
+# function wrapped by @hydra.main). This preserves the module's own __name__
+# and lets Hydra pick up the decorator's config_path / config_name as declared.
+# If no `main` attribute is defined we fall back to runpy (matches
+# `python -m <module>` semantics).
 import importlib  # noqa: E402
 
 _host_exit_code = 0
@@ -181,25 +217,20 @@ try:
     _mod = importlib.import_module(_ENTRY_MAIN_MODULE)
     _main_fn = getattr(_mod, "main", None)
     if callable(_main_fn):
-        print(f"[AR-WRAPPER] calling {_ENTRY_MAIN_MODULE}.main() argv={_argv}", file=sys.stderr)
+        print(f"[AR-WRAPPER] calling {_ENTRY_MAIN_MODULE}.main() hydra-argv={_argv}", file=sys.stderr)
         _main_fn()
     else:
-        # No top-level main() — fall back to runpy (matches `python -m <module>` semantics).
-        print(f"[AR-WRAPPER] runpy {_ENTRY_MAIN_MODULE} argv={_argv}", file=sys.stderr)
+        print(f"[AR-WRAPPER] runpy {_ENTRY_MAIN_MODULE} hydra-argv={_argv}", file=sys.stderr)
         runpy.run_module(_ENTRY_MAIN_MODULE, run_name="__main__")
 except SystemExit as _se:
-    # Host scripts often call sys.exit(0) at the end. Re-raise only on failure.
     _code = _se.code
     if _code is None or _code == 0:
         _host_exit_code = 0
     elif isinstance(_code, int):
         _host_exit_code = _code
     else:
-        # Non-int exit code (e.g. string message) — treat as failure.
         _host_exit_code = 1
     if _host_exit_code != 0:
-        # Record, then re-raise AFTER AR-SAVE runs so ar sees a proper exit
-        # code but also captures whatever partial state the host wrote.
         print(
             f"[AR-WRAPPER] host {_ENTRY_MAIN_MODULE} exited with code={_host_exit_code}",
             file=sys.stderr,
@@ -207,11 +238,12 @@ except SystemExit as _se:
 
 # ======================================================================
 # === AR-SAVE (do not edit; ar manages this) ===========================
-# Writes wandb_pointer.json first so `ar run` can bind to the correct wandb
-# run under DDP, then locates the host's saved checkpoint in three candidate
-# locations and copies / links it into AR_RUN_DIR/state.pt. If no ckpt is
-# found, writes `.ar-save-failed` with the diagnostic so ar forces
-# verdict=revert upstream.
+# Writes wandb_pointer.json first (best-effort; only if wandb is bound),
+# then discovers the host's saved checkpoint. Priority order:
+#   (0) --checkpoint-glob (Lightning / plain-torch / custom layouts)
+#   (a) $AR_RUN_DIR/state.pt          (cooperative host save)
+#   (b) $AR_RUN_DIR/state/            (accelerator.save_state dir)
+#   (c) CLI_OVERRIDES value for the host's "output_dir" key / checkpoint-*
 # ======================================================================
 
 try:
@@ -233,22 +265,15 @@ try:
     except Exception as _e:
         print(f"[AR-SAVE] wandb pointer write failed: {_e}", file=sys.stderr)
 
-    # (2) Checkpoint discovery. Walk candidates in priority order; first hit wins.
-    #     (0) --checkpoint-glob (agent-configured; Lightning / plain-torch / custom layouts)
-    #     (a) $AR_RUN_DIR/state.pt (host cooperatively saved directly)
-    #     (b) $AR_RUN_DIR/state/ (accelerate.save_state directory)
-    #     (c) CLI_OVERRIDES['output_dir']/checkpoint-* (HF Trainer convention)
+    # (2) Checkpoint discovery.
     _target = AR_RUN_DIR / "state.pt"
-    _found_from: str | None = None
+    _found_from: "str | None" = None
 
     def _ar_save_copy_into_state_pt(src: Path) -> None:
-        """Copy a file (or a directory, tarring it implicitly via shutil) to state.pt."""
+        """Copy a file (or a directory, tarring it implicitly) to state.pt."""
         if src.is_file():
             shutil.copyfile(src, _target)
         elif src.is_dir():
-            # accelerate's save_state dumps a directory. We pack it verbatim
-            # into state.pt by making a tarball — downstream best_ckpt/state.pt
-            # stays a single file (simplifies the two-stage atomic swap logic).
             import tarfile
 
             with tarfile.open(_target, "w") as _tf:
@@ -258,9 +283,7 @@ try:
 
     {% if checkpoint_glob %}
     # Candidate (0): --checkpoint-glob, evaluated from the project root
-    # (os.getcwd() at subprocess launch, which `ar run` sets to the host
-    # project root). Newest-mtime wins. Priority-0: takes precedence over
-    # cooperative state.pt and framework-default locations below.
+    # (os.getcwd() at subprocess launch). Newest-mtime wins. Priority-0.
     _CKPT_GLOB = {{ checkpoint_glob | tojson }}
     _project_root = Path.cwd()
     _glob_matches = sorted(
@@ -282,8 +305,7 @@ try:
     if _found_from is None and _cand_a.is_file() and _cand_a.stat().st_size > 0:
         _found_from = "host-saved-to-state.pt"
     elif _found_from is None:
-        # Candidate (b): accelerate's `accelerator.save_state($AR_RUN_DIR/state)`
-        # writes a directory.
+        # Candidate (b): accelerator.save_state($AR_RUN_DIR/state).
         _cand_b = AR_RUN_DIR / "state"
         if _cand_b.is_dir() and any(_cand_b.iterdir()):
             try:
@@ -292,12 +314,16 @@ try:
             except Exception as _e:
                 print(f"[AR-SAVE] failed to pack {_cand_b}: {_e}", file=sys.stderr)
 
-        # Candidate (c): host wrote to its own output_dir. We look for an
-        # `output_dir` key in CLI_OVERRIDES and, if present, locate the latest
-        # `checkpoint-*` directory inside it (HF Trainer / accelerate launcher
-        # convention).
+        # Candidate (c): host wrote to its own output_dir. For Hydra projects,
+        # output_dir often lives at `hydra.run.dir` (default cwd) or
+        # `paths.output_dir` — we look at a few conventional override keys.
         if _found_from is None:
-            _output_dir_str = CLI_OVERRIDES.get("output_dir")
+            _output_dir_str = None
+            for _candidate_key in ("output_dir", "hydra.run.dir", "paths.output_dir", "trainer.default_root_dir"):
+                _v = CLI_OVERRIDES.get(_candidate_key)
+                if _v:
+                    _output_dir_str = _v
+                    break
             if _output_dir_str:
                 _output_dir = Path(str(_output_dir_str)).expanduser()
                 if _output_dir.is_dir():
@@ -318,10 +344,6 @@ try:
                             )
 
     if _found_from is None:
-        # No checkpoint found — write the sentinel so ar run's best-swap step
-        # forces verdict=revert. Also write a zero-byte state.pt so ar run's
-        # "state.pt exists" check surfaces this as a save failure rather than
-        # a missing-file error from an earlier stage.
         _target.write_bytes(b"")
         _msg = (
             "No checkpoint discovered in any of:\n"
@@ -330,7 +352,7 @@ try:
             {% endif %}
             f"  (a) {AR_RUN_DIR / 'state.pt'} (cooperative host save)\n"
             f"  (b) {AR_RUN_DIR / 'state'}/ (accelerator.save_state dir)\n"
-            f"  (c) CLI_OVERRIDES['output_dir']/checkpoint-* (HF/accelerate default)\n"
+            "  (c) CLI_OVERRIDES output_dir / hydra.run.dir / paths.output_dir -> checkpoint-*\n"
             "Host script must save to one of these locations for `ar` to advance.\n"
         )
         (AR_RUN_DIR / ".ar-save-failed").write_text(_msg, encoding="utf-8")
@@ -338,8 +360,6 @@ try:
     else:
         print(f"[AR-SAVE] state.pt sourced from: {_found_from}", file=sys.stderr)
 except Exception as _outer_e:
-    # Outer guard: AR-SAVE must never abort the subprocess with an unhandled
-    # exception; the verdict is determined by ar based on state.pt + sentinel.
     try:
         (AR_RUN_DIR / ".ar-save-failed").write_text(
             f"AR-SAVE outer exception: {_outer_e}\n{traceback.format_exc()}",
@@ -350,7 +370,5 @@ except Exception as _outer_e:
 # === END AR-SAVE ======================================================
 # ======================================================================
 
-# Re-raise host failure after AR-SAVE has run, so `ar` sees the correct exit
-# code via the subprocess wait path.
 if _host_exit_code != 0:
     sys.exit(_host_exit_code)

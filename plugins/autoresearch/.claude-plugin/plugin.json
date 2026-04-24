@@ -1,7 +1,7 @@
 {
   "name": "autoresearch",
-  "version": "0.2.2",
-  "description": "Karpathy-style autonomous LLM research loop adapted for real ML codebases (editable-install Python projects, accelerate/torchrun launchers, wandb metrics). Ships two skills — setup and run — plus an `ar` helper CLI that owns launch orchestration, metric extraction, atomic checkpoint commit, and chain-mode transitions so the main Claude session stays context-light across hundreds or thousands of iterations. v0.2.0 adds argparse-CLI wrapper mode for scripts with `if __name__ == \"__main__\"` entry points, project introspection in setup (entry module / CLI args / wandb project / distributed framework / resume flag detection), and a venv preflight phase before project analysis.",
+  "version": "0.3.0",
+  "description": "Karpathy-style autonomous LLM research loop adapted for generic ML codebases. Ships two skills — setup and run — plus an `ar` helper CLI that owns launch orchestration, metric extraction, atomic checkpoint commit, and chain-mode transitions so the main Claude session stays context-light across hundreds or thousands of iterations. v0.3.0 drops the wandb/accelerate monoculture: metric backend is pluggable (wandb / tensorboard / log-scan / custom with auto-detection), distributed-framework resolution is auto-detected (accelerate/deepspeed/fsdp/ddp/lightning/none), a new `hydra` entry pattern renders a Hydra-override-style train wrapper, and `--checkpoint-glob` gives priority-0 control over checkpoint discovery for Lightning / plain-torch / custom layouts.",
   "author": {
     "name": "jahn",
     "email": "ajh508@naver.com"
@@ -15,6 +15,9 @@
     "autoresearch",
     "karpathy",
     "wandb",
+    "tensorboard",
+    "hydra",
+    "lightning",
     "experiment-tracking"
   ],
   "license": "MIT"

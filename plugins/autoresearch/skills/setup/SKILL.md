@@ -1,6 +1,6 @@
 ---
 name: autoresearch:setup
-description: Scaffolds a new autonomous-research experiment directory (`.autoresearch/{YYMMDD}-{slug}/`) inside a deep-learning project so Claude can run a long train.py-mutation loop without blowing context. This skill should be used when the user asks to "start an autoresearch experiment", "set up autonomous research loop on this project", "create a new .autoresearch run", "scaffold autoresearch", "initialize autoresearch for this repo", "kick off an autonomous training loop", "set up Karpathy-style autoresearch here", or otherwise indicates they want Claude to begin autonomous iteration on their ML research code. The skill performs a venv preflight, analyzes the project's editable-install Python packages, scans recent `wandb/run-*/files/wandb-summary.json` files to surface primary-metric candidates, introspects the host's training entrypoint (argparse-CLI script vs importable main() function), infers the distributed framework (accelerate / torchrun / FSDP / DDP / none) and resume-flag convention, captures baseline CLI args, runs a short interview, and then materializes the expr by calling `ar init` which renders the train.py / prepare.py / program.md templates.
+description: Scaffolds a new autonomous-research experiment directory (`.autoresearch/{YYMMDD}-{slug}/`) inside a deep-learning project so Claude can run a long train.py-mutation loop without blowing context. This skill should be used when the user asks to "start an autoresearch experiment", "set up autonomous research loop on this project", "create a new .autoresearch run", "scaffold autoresearch", "initialize autoresearch for this repo", "kick off an autonomous training loop", "set up Karpathy-style autoresearch here", or otherwise indicates they want Claude to begin autonomous iteration on their ML research code. The skill performs a venv preflight, analyzes the project's editable-install Python packages, surfaces primary-metric candidates from whichever tracker the host uses (wandb / tensorboard / plain stdout logs), introspects the host's training entrypoint (argparse-CLI script vs importable main() function vs hydra app), infers the distributed framework (accelerate / torchrun / FSDP / DDP / pytorch-lightning / none), detects checkpoint conventions (HF Trainer / Lightning / plain torch.save), runs a short interview, and then materializes the expr by calling `ar init` which renders the train.py / prepare.py / program.md templates.
 argument-hint: [topic]
 allowed-tools: Read, Bash, Glob, Grep, AskUserQuestion, Write
 ---
@@ -36,18 +36,35 @@ If missing, halt immediately:
 
 Do NOT attempt to locate the project root automatically; this is almost always operator error and the correct response is to abort with a clear message.
 
-### Step 0.2 — venv + core deps
+### Step 0.2 — venv + mandatory core dep
 
 ```bash
-uv run --no-sync python -c "import torch, accelerate, wandb" 2>&1
+uv run --no-sync python -c "import torch" 2>&1
 ```
 
-The `--no-sync` flag prevents `uv` from silently mutating the environment during the probe.
+The `--no-sync` flag prevents `uv` from silently mutating the environment during the probe. `torch` is the only hard requirement — it's universal across every framework v0.3.0 supports (HF Trainer, Hydra, Lightning, plain-PyTorch, custom loops). Everything else is a soft signal.
 
 - **Exit 0, no output:** proceed to step 0.3.
 - **Non-zero exit:** diagnose. See "Diagnosis flowchart" below. When consent is needed, use `AskUserQuestion`.
 
-### Step 0.3 — wandb login (soft)
+### Step 0.3 — optional-dep probe (soft signals, informational only)
+
+Probe each in turn. Record each as `present` / `absent` for Phase 1 to consume — do NOT halt on any absence.
+
+```bash
+uv run --no-sync python -c "import accelerate"        2>/dev/null && echo "accelerate=present"        || echo "accelerate=absent"
+uv run --no-sync python -c "import wandb"             2>/dev/null && echo "wandb=present"             || echo "wandb=absent"
+uv run --no-sync python -c "import torch.distributed" 2>/dev/null && echo "torch_distributed=present" || echo "torch_distributed=absent"
+uv run --no-sync python -c "import pytorch_lightning" 2>/dev/null && echo "lightning=present"         || echo "lightning=absent"
+uv run --no-sync python -c "import lightning"         2>/dev/null && echo "lightning2=present"        || echo "lightning2=absent"
+uv run --no-sync python -c "import tensorboard"       2>/dev/null && echo "tensorboard=present"       || echo "tensorboard=absent"
+```
+
+These signals feed Phase 1 detection; none of them block. If `wandb=absent`, the metric-backend interview question (Phase 2 item 6) will default to `log`. If `accelerate=absent` and `lightning=absent` and `torch_distributed=absent`, the distributed-framework question will default to `none` via the `auto` sentinel.
+
+### Step 0.4 — wandb login (soft, skipped if wandb absent)
+
+Run only if step 0.3 reported `wandb=present`:
 
 ```bash
 (test -f ~/.netrc && grep -q "api.wandb.ai" ~/.netrc) && echo "ok" || echo "missing"
@@ -55,9 +72,9 @@ The `--no-sync` flag prevents `uv` from silently mutating the environment during
 
 If missing, warn once:
 
-> Note: `wandb login` does not appear to be set up (`~/.netrc` lacks an `api.wandb.ai` entry). Training will still run, but metrics will be offline-only. Run `uv run wandb login` any time to enable — does not block setup.
+> Note: `wandb` is installed but `wandb login` does not appear to be configured (`~/.netrc` lacks an `api.wandb.ai` entry). Training will still run, but wandb metrics will be offline-only. Run `uv run wandb login` any time to enable — does not block setup.
 
-Proceed regardless — this is a soft signal.
+Proceed regardless — this is a soft signal. If wandb itself is absent, skip this step entirely.
 
 ### Diagnosis flowchart (step 0.2 red path)
 
@@ -79,7 +96,7 @@ fi
 MAIN_WORKTREE=$(dirname "$(git rev-parse --git-common-dir)")
 for cand in "$MAIN_WORKTREE" "$MAIN_WORKTREE"/../*; do
   if [ -d "$cand/.venv" ]; then
-    uv run --project "$cand" --no-sync python -c "import torch, accelerate, wandb" 2>/dev/null && \
+    uv run --project "$cand" --no-sync python -c "import torch" 2>/dev/null && \
       echo "candidate: $cand"
   fi
 done
@@ -106,50 +123,70 @@ See **`references/venv-preflight.md`** for the complete failure-mode table (brok
 
 ### Halt vs proceed
 
-Proceed to Phase 1 only if steps 0.1 and 0.2 are both green. 0.3 is a soft warning that never blocks.
+Proceed to Phase 1 only if steps 0.1 and 0.2 are both green. Steps 0.3 and 0.4 produce informational signals and soft warnings respectively — neither blocks.
 
 ---
 
 ## Phase 1 — Project analysis
 
-Goal: gather enough signal to propose strong defaults for the interview. Treat this phase as read-only reconnaissance. Target ≤ 12 reads total in this phase (up from 10 in v0.1 because the entry-point + CLI-args probes require extra reads); prefer `Glob`/`Grep` over full-file reads. Do not read files already in session context.
+Goal: gather enough signal to propose strong defaults for the interview. Treat this phase as read-only reconnaissance. Target ≤ 14 reads total in this phase (up from 12 in v0.2 because the metric-backend + config-system + checkpoint-convention probes each add one read on average); prefer `Glob`/`Grep` over full-file reads. Do not read files already in session context.
 
 ### Signals to collect
 
 Read / glob these in priority order, and stop early once proposals are well-formed:
 
-1. **`pyproject.toml`** — Read full. Extract project name, dependencies (torch / accelerate / wandb / deepspeed presence), package roots (`[tool.setuptools.packages.find]` / `[project.scripts]` / `[tool.uv]`).
+1. **`pyproject.toml`** — Read full. Extract project name, dependencies (torch / accelerate / wandb / deepspeed / pytorch-lightning / hydra-core / tensorboard / mlflow presence), package roots (`[tool.setuptools.packages.find]` / `[project.scripts]` / `[tool.uv]`).
 
 2. **`CLAUDE.md`** (project-level, plus any under subpackages) — Read if present. Extract:
    - The project's own "how to run training" command block (usually under a "Commands" or "Training" heading). **This is the strongest signal for both the runner and the CLI args** — the exact command the user types to train locally.
    - Project description / research themes for goal candidates.
 
-3. **`wandb/`** directory — Glob `wandb/run-*/files/`. For up to 3 of the most recent runs, read:
-   - `wandb-summary.json` — metric keys (union across samples), last numeric values.
-   - `config.yaml` — the flattened training config (argparse namespace). **This is the strongest signal for `--cli-args-json`** — copy scalar keys directly. Also contains the wandb project name via the `_wandb.project` or enclosing metadata.
-   - `wandb-metadata.json` — `program`, `args`, `username`, `root` — surfaces the exact entry script and argv.
+3. **Metric-backend artifacts** — do not read payloads; glob + stat only.
+   - `wandb/run-*/files/` exists? → **wandb** is a strong candidate. If up to 3 most recent runs exist, read `wandb-summary.json` (metric keys), `config.yaml` (the flattened training config — **strongest signal for `--cli-args-json`** — and contains the wandb project via `_wandb.project`), and `wandb-metadata.json` (`program`, `args`, surfaces the exact entry script and argv).
+   - `events.out.tfevents.*` files anywhere under the project (common roots: `runs/`, `tb_logs/`, `tensorboard/`, `lightning_logs/*/`, `outputs/*/tensorboard/`) → **tensorboard** is a strong candidate. Record the glob that captures them; it feeds `--tb-events-glob`.
+   - `mlruns/` directory → **mlflow** — mark as `custom` for v0.3.0 and emit a TODO: "native mlflow backend planned for v0.4.0; a Python `--metric-extract-code` snippet is required until then".
+   - None of the above → **log** (stdout-parsing fallback).
+   Rank: wandb ≻ tensorboard ≻ custom (mlflow) ≻ log. Lowest-confidence detection (only one run dir, or only a stale `events.out.tfevents.*`) → mark detection confidence low so Phase 2 item 6 pushes harder for the user to confirm.
 
-4. **Entry-point training scripts** — Glob `training/**/*.py`, `train.py`, `scripts/train*.py`, `tools/train*.py`. For each, check:
+4. **Entry-point training scripts** — Glob `training/**/*.py`, `train.py`, `scripts/train*.py`, `tools/train*.py`, `src/**/train*.py`. For each, check:
    - `if __name__ == "__main__":` block present? → candidate for **argparse-cli** pattern.
-   - Contains `argparse.ArgumentParser(` or `HfArgumentParser(` or `simple_parsing`? → strongly argparse-cli. Record the dotted-module path (e.g. `pivot.training.main`).
+   - Contains `argparse.ArgumentParser(` or `HfArgumentParser(` or `simple_parsing`? → strongly argparse-cli. Record the dotted-module path (e.g. `myproject.training.main`).
    - Defines a top-level `def main(...)` with typed kwargs and is imported elsewhere? → candidate for **function** pattern.
+   - Contains `@hydra.main(...)` decorator? → **hydra** pattern (v0.3.0-native entry pattern; see signal 5 below for config-system confirmation).
    - Neither clearly → **custom** pattern (agent will wire it manually in train.py).
-   - **Rank candidates by:** (a) presence of ArgumentParser + `__main__` block wins over (b) `main()` function; ties broken by which file's path appears in `CLAUDE.md`'s training command.
+   - **Rank candidates by:** (a) Hydra decorator wins over (b) presence of ArgumentParser + `__main__` block wins over (c) `main()` function; ties broken by which file's path appears in `CLAUDE.md`'s training command.
 
-5. **Distributed framework** — grep the training entrypoint (and nearby modules) for:
+5. **Config system detection** (new in v0.3.0) — grep the entrypoint and its imports:
+   - `@hydra.main` / `from hydra` / `hydra.utils` / `from omegaconf import OmegaConf` → **hydra**. Feeds `--entry-pattern hydra`.
+   - `LightningCLI(` → **lightning-cli**. **Not natively supported in v0.3.0** — record as `custom` with a TODO pointer to v0.4.0.
+   - `argparse.ArgumentParser(` / `HfArgumentParser(` / `simple_parsing` → **argparse-cli**.
+   - `from fire import Fire` / `fire.Fire(` → **fire**. **Not natively supported in v0.3.0** — record as `custom` with a TODO pointer to v0.4.0.
+   - None of the above but a top-level `main()` is importable → **function**.
+   - Otherwise → **custom**.
+
+6. **Distributed framework** — grep the training entrypoint (and nearby modules) for:
+   - `import pytorch_lightning` / `from pytorch_lightning` / `import lightning` / `from lightning.pytorch` / `pl.Trainer(` / `L.Trainer(` → **lightning** (v0.3.0 recognizes this as a distinct framework; the launcher delegates to Lightning's own strategy resolver rather than wrapping with accelerate).
    - `from accelerate` / `Accelerator(` → **accelerate**
    - `import deepspeed` / `deepspeed.initialize` / `deepspeed_config` → **deepspeed**
    - `FullyShardedDataParallel` / `FSDP(` / `torch.distributed.fsdp` → **fsdp**
    - `torch.distributed.init_process_group` / `DistributedDataParallel` without the above → **ddp**
    - Nothing dist-related → **none**
+   - Cross-check against Phase 0 step 0.3 signals: if grep says accelerate but `accelerate=absent`, downgrade to a lower-confidence candidate (the user may have inadvertently removed the dep; surface this tension in the interview).
+   - If detection is ambiguous or multiple candidates tie, emit `auto` — the new v0.3.0 default that tells `ar run` to introspect the runner command at launch time.
 
-6. **Resume flag detection** — grep the training entrypoint for argparse definitions matching `add_argument\([\"']--?resume` or similar. Common flag names in order of likelihood: `resume_from_checkpoint`, `resume`, `resume_checkpoint`, `ckpt_path`, `pretrained_checkpoint`. Record the detected flag **without** the `--` prefix. If multiple candidates or none, mark as "unclear — ask user".
+7. **Resume flag detection** — grep the training entrypoint for argparse definitions matching `add_argument\([\"']--?resume` or similar. Common flag names in order of likelihood: `resume_from_checkpoint`, `resume`, `resume_checkpoint`, `ckpt_path`, `pretrained_checkpoint`. Record the detected flag **without** the `--` prefix. If multiple candidates or none, mark as "unclear — ask user". For Hydra entrypoints, the equivalent is a config key (e.g. `trainer.resume_from_checkpoint`) rather than a flag — note that and let Phase 2 capture it as a Hydra override.
 
-7. **Checkpoint save convention** — grep for `accelerator.save_state(`, `trainer.save_state(`, `torch.save(`, `model.save_pretrained(`. Record the dominant pattern; feeds the AR-SAVE block's checkpoint-discovery heuristics in wrapper mode (see `train_wrapper.py` (a)/(b)/(c) candidates).
+8. **Checkpoint convention detection** (expanded in v0.3.0) — grep the entrypoint and nearby modules for save/load patterns, then propose a `--checkpoint-glob` matching where files actually land:
+   - `trainer.save_model(`, `save_pretrained(`, `output_dir/checkpoint-*/` (HF Trainer convention) → suggest `output_dir/checkpoint-*/` or the detected `output_dir`-relative equivalent.
+   - `*.ckpt` references, `ModelCheckpoint(`, `lightning_logs/` on disk → Lightning → suggest `lightning_logs/*/checkpoints/*.ckpt` (or `outputs/*/checkpoints/best.pt` if Hydra + Lightning).
+   - `accelerator.save_state(` → accelerate → suggest `checkpoints/*/` or `<save_dir>/*/`.
+   - `torch.save(` with explicit path patterns → extract the path format from the literal and suggest `checkpoints/*.pt` or the project-specific equivalent.
+   - Hydra projects with default `outputs/` cwd + safetensors/torch saves → suggest `outputs/*/model.safetensors` or `outputs/*/checkpoints/best.pt`.
+   - Multiple candidates → rank by filesystem evidence (a glob that matches existing files wins over a purely grep-derived guess). Offer the top 2-3 in the interview.
 
-8. **`accelerate` / `deepspeed` configs** — Glob `configs/accelerate*.yaml`, `accelerate_config*.yaml`, `**/accelerate/*.yaml`. If found, note exact filenames — used verbatim in the runner spec.
+9. **`accelerate` / `deepspeed` / Hydra configs** — Glob `configs/accelerate*.yaml`, `accelerate_config*.yaml`, `**/accelerate/*.yaml`, `conf/**/*.yaml`, `configs/**/*.yaml`. If found, note exact filenames — used verbatim in the runner spec and, for Hydra, as the config search path.
 
-9. **Recent git commits** — `git log --oneline -n 20` if inside a git repo. Use commit messages as additional signal for goal candidates.
+10. **Recent git commits** — `git log --oneline -n 20` if inside a git repo. Use commit messages as additional signal for goal candidates.
 
 ### What to derive
 
@@ -158,25 +195,29 @@ From the above signals, derive the proposal lists that feed the interview:
 | Proposal | Source | Output |
 |---|---|---|
 | Goal candidates (3–4) | CLAUDE.md + recent commits + top-level module names | Short phrases. |
-| Primary-metric candidates | wandb-summary.json keys (union) | Ordered list with inferred direction. |
+| Primary-metric candidates | wandb-summary.json keys, tensorboard scalar tags, or grepped stdout regex anchors | Ordered list with inferred direction. |
 | Mutation-scope candidates | Training entrypoint imports + obvious module roots | Dotted paths. |
 | Runner inference | CLAUDE.md + accelerate configs + entrypoint | `accelerate launch --config_file ...`, `torchrun --nproc-per-node N`, `python`, `custom`. |
-| **Entry pattern** (new) | Signal 4 | `argparse-cli` / `function` / `custom`. |
-| **Entry main module** (new) | Signal 4 | Dotted path, e.g. `pivot.training.main`. Only required if pattern is argparse-cli. |
-| **CLI args baseline** (new) | wandb config.yaml + CLAUDE.md command block | Flat JSON-like dict of scalar flag values (e.g. `{"config":"base_flat","learning_rate":1.5e-4}`). Pick the top 5–10 most-distinctive keys; skip obviously-cosmetic ones (`log_level`, `wandb_mode`). |
-| **wandb project** (new) | wandb config.yaml (`_wandb.project`) | Project name string. |
-| **Distributed framework** (new) | Signal 5 | `accelerate` / `deepspeed` / `fsdp` / `ddp` / `none`. |
-| **Resume flag name** (new) | Signal 6 | String without `--` prefix, or null. |
+| **Entry pattern** | Signals 4 + 5 | `argparse-cli` / `function` / `hydra` / `custom`. |
+| **Entry main module** | Signal 4 | Dotted path, e.g. `myproject.training.main`. Only required if pattern is argparse-cli or hydra. |
+| **CLI args baseline** | wandb config.yaml + CLAUDE.md command block | Flat JSON-like dict of scalar flag values (e.g. `{"config":"base","learning_rate":1.5e-4}`) for argparse-cli, or a list of Hydra override strings (e.g. `["optimizer.lr=3e-4","model.hidden_dim=512"]`) for hydra. Pick the top 5–10 most-distinctive keys; skip obviously-cosmetic ones (`log_level`, `wandb_mode`). |
+| **Metric backend** (new in v0.3.0) | Signal 3 | `wandb` / `tensorboard` / `log` / `custom` / `auto`. |
+| **TensorBoard events glob** (new in v0.3.0) | Signal 3 | Glob string, e.g. `runs/*/events.out.tfevents.*`. Only required if metric backend is `tensorboard`. |
+| **Custom metric snippet** (new in v0.3.0) | Phase 2 follow-up AskUserQuestion | Short Python body that reads `run_dir` / `run_log_text` and returns a `dict[str, float]`. Required if metric backend is `custom`. |
+| **wandb project** | wandb config.yaml (`_wandb.project`) | Project name string. Only relevant if metric backend is `wandb`. |
+| **Distributed framework** | Signal 6 | `accelerate` / `deepspeed` / `fsdp` / `ddp` / `lightning` / `none` / `auto`. |
+| **Resume flag name** | Signal 7 | String without `--` prefix, or null. For Hydra, capture as an override key instead (e.g. `trainer.resume_from_checkpoint`). |
+| **Checkpoint glob** (new in v0.3.0) | Signal 8 | Glob string relative to project cwd (e.g. `output_dir/checkpoint-*/`, `lightning_logs/*/checkpoints/*.ckpt`, `outputs/*/model.safetensors`) or null (host doesn't save to a conventional location). |
 
-prepare.py mode selection (thin-wrapper vs full-prep) stays unchanged from v0.1 — `ar init` handles it based on presence of `build_train_loader` / data-module imports.
+prepare.py mode selection (thin-wrapper vs full-prep) stays unchanged — `ar init` handles it based on presence of `build_train_loader` / data-module imports.
 
 ### Read budget
 
-Soft cap: 12 reads across this phase. If probes 4–6 produce enough signal on the first training script read, skip additional entry-point candidates. If no wandb runs exist, skip signal 3 entirely (the user fills CLI args manually in the interview).
+Soft cap: 14 reads across this phase. If probes 4–6 produce enough signal on the first training script read, skip additional entry-point candidates. If signal 3 finds no tracker artifacts at all, fall back to `log` + stdout-regex scan (the user confirms the metric name in the interview).
 
-Do not read the same file twice. Do not read `.pt` / `.safetensors` / `wandb/run-*/logs/` — large and worthless.
+Do not read the same file twice. Do not read `.pt` / `.safetensors` / `.ckpt` / `wandb/run-*/logs/` / `events.out.tfevents.*` binary payloads — large and worthless (globs + stat are enough).
 
-See `references/project-analysis.md` for extended grep patterns if any of {goal, metric, scope, runner, entry-pattern} produced fewer than 2 candidates.
+See `references/project-analysis.md` for extended grep patterns if any of {goal, metric, scope, runner, entry-pattern, metric-backend, checkpoint-glob} produced fewer than 2 candidates.
 
 ---
 
@@ -186,88 +227,120 @@ One `AskUserQuestion` call with the items below, in this exact order. Use Phase 
 
 ### Items
 
-**1. Entry pattern** (`entry_pattern`) — NEW in v0.2.0
-- `question`: "What shape is your training entrypoint?" — include a preview line showing the detected main module, e.g. `Detected: pivot.training.main (argparse.ArgumentParser present + __main__ block)`.
+**1. Entry pattern** (`entry_pattern`)
+- `question`: "What shape is your training entrypoint?" — include a preview line showing the detected main module, e.g. `Detected: myproject.training.main (argparse.ArgumentParser present + __main__ block)`.
 - `options`:
   - `"argparse-cli — runpy-invoke an `if __name__ == '__main__':` script"` (pre-selected if Phase 1 detected ArgumentParser + `__main__`)
+  - `"hydra — invoke a @hydra.main-decorated entrypoint with key=value overrides"` (pre-selected if Phase 1 detected `@hydra.main` / hydra deps)
   - `"function — call an importable main(**kwargs)"`
   - `"custom — I'll wire it manually in train.py"`
-- If user picks `argparse-cli`, the detected main module feeds `--entry-main-module`. If detection was ambiguous, ask as a follow-up free-text.
+- Detected main module feeds `--entry-main-module` for argparse-cli / hydra / function. If detection was ambiguous, ask as a follow-up free-text.
 
-**2. Baseline CLI args** (`cli_args`) — NEW in v0.2.0
+**2. Baseline CLI args / Hydra overrides** (`cli_args`)
 - Skip entirely if user picked `function` or `custom` in item 1.
-- `question`: "These are the baseline CLI args the agent will start from (edit `CLI_OVERRIDES` in `train.py` per run). Keep as-is, or edit?" — show the detected dict as preview, e.g.
+- `question`: "These are the baseline overrides the agent will start from (edit `CLI_OVERRIDES` in `train.py` per run). Keep as-is, or edit?" — show the detected dict/list as preview. For argparse-cli:
   ```
-  {
-    "config": "base_flat",
-    "datasets": "openvid_wds",
-    "learning_rate": 1.5e-4,
-    "num_train_epochs": 1
-  }
+  {"config": "base", "learning_rate": 1.5e-4, "num_train_epochs": 1}
+  ```
+  For hydra:
+  ```
+  ["optimizer.lr=3e-4", "model.hidden_dim=512", "trainer.max_epochs=1"]
   ```
 - `options`:
   - `"Keep as-is"` (pre-selected)
-  - `"Edit — I'll paste a JSON dict"` (free-text; accept multi-line JSON)
-  - `"Empty — start with {}"` (useful if agent should rebuild from scratch)
+  - `"Edit — I'll paste a JSON value"` (free-text; accept either a dict for argparse-cli or a list of strings for hydra)
+  - `"Empty — start with {} / []"` (useful if agent should rebuild from scratch)
 - Record as a JSON string; becomes `--cli-args-json`.
 
-**3. Resume flag** (`resume_flag_name`) — NEW in v0.2.0
+**3. Resume flag / override key** (`resume_flag_name`)
 - Skip entirely if user picked `function` or `custom` in item 1.
-- `question`: "Which argparse flag does your training script accept to resume from a checkpoint?" — with detected preview if Phase 1 found one.
-- `options`: detected flag first (pre-selected, shown as e.g. `resume_from_checkpoint (detected)`), then common alternatives `resume`, `ckpt_path`, `pretrained_checkpoint`, `"None — no resume flag (use AR_RESUME_CKPT env var instead)"`, `"Other (type)"`.
-- Record name without `--`. Becomes `--resume-flag-name`.
+- `question`: "Which flag (argparse) or override key (hydra) resumes from a checkpoint?" — with detected preview if Phase 1 found one.
+- `options` (argparse-cli): detected flag first (pre-selected, e.g. `resume_from_checkpoint (detected)`), then common alternatives `resume`, `ckpt_path`, `pretrained_checkpoint`, `"None — no resume flag (use AR_RESUME_CKPT env var instead)"`, `"Other (type)"`.
+- `options` (hydra): detected override first (e.g. `trainer.resume_from_checkpoint`), common alternatives `trainer.ckpt_path`, `resume_from`, `"None — use AR_RESUME_CKPT env var"`, `"Other (type)"`.
+- Record name without `--` prefix. Becomes `--resume-flag-name` (argparse) or `--resume-override-key` (hydra — same underlying template field, surfaced as an override).
 
-**4. wandb project** (`wandb_project`) — NEW in v0.2.0
-- `question`: "Which wandb project should runs log to?" — with detected preview if Phase 1 found one.
-- `options`: detected value (pre-selected), then `"Other (type)"`. Optional — accept empty.
-- Becomes `--wandb-project`.
-
-**5. Distributed framework** (`distributed_framework`) — NEW in v0.2.0
+**4. Distributed framework** (`distributed_framework`)
 - `question`: "Which distributed-training framework does the host use?"
-- `options`: Phase 1 detection first (pre-selected), then `accelerate`, `deepspeed`, `fsdp`, `ddp`, `none`.
+- `options`: Phase 1 detection first (pre-selected), then `accelerate`, `deepspeed`, `fsdp`, `ddp`, `lightning`, `none`, `auto` (let `ar run` introspect the runner command at launch time — new v0.3.0 default when Phase 1 detection is ambiguous).
 - Becomes `--distributed-framework`.
 
-**6. Research goal** (`research_goal`)
+**5. Research goal** (`research_goal`)
 - `question`: "What should this experiment optimize for?"
 - `options`: 3–4 candidate themes from Phase 1, plus `"Other (describe)"`. Free text accepted.
 - Becomes `--goal`. Kebab form seeds the slug if `$ARGUMENTS` was not provided.
 
-**7. Primary metric** (`primary_metric`)
-- `question`: "Which wandb metric is the single source of truth for 'did this run improve'?"
-- `options`: top metric candidates from Phase 1 with inferred direction, e.g. `val/loss (min)`, `eval/ucf101_top1 (max)`. Include `"Other (type metric=direction)"`.
+**6. Metric backend** (`metric_backend`) — NEW in v0.3.0
+- `question`: "How does the host training run report metrics the agent should read?"
+- `options`: detected primary first (pre-selected), then the alternatives:
+  - `wandb — read `wandb/run-*/files/wandb-summary.json`` (pre-selected if Phase 1 found a `wandb/` dir)
+  - `tensorboard — read `events.out.tfevents.*` files via `tensorboard.backend.event_processing`` (pre-selected if Phase 1 found event files)
+  - `log — parse training's stdout/stderr (captured by `ar` into `run.log`) with a user-supplied regex`
+  - `custom — paste a Python snippet that reads `run_dir` and returns a `dict[str, float]`` (forces follow-up AskUserQuestion below)
+  - `auto — let `ar run` try wandb → tensorboard → log in that order on each run`
+- **Pushy branch:** if Phase 1 detection confidence is low (e.g. a single stale tfevents file and no wandb runs), phrase the question more assertively: include a preview line like `Low-confidence detection — please confirm; defaulting to log may be safer than auto.`
+- Becomes `--metric-backend`.
+- Follow-up AskUserQuestion fires **only** if `custom` was selected. Question: "Paste a short Python body (indent-free). It receives `run_dir: Path` and `run_log_text: str`; it must return `dict[str, float]`. Example: `return {\"val_loss\": float(re.search(r'val_loss=([0-9.]+)', run_log_text).group(1))}`". Free-text only. Becomes `--metric-extract-code` (passed as a base64-encoded argument; `ar init` writes it into program.md and train.py).
+- If `tensorboard` was selected, the follow-up is a free-text AskUserQuestion for the events glob ("Which glob matches the event files you want to read?"), pre-populated with Phase 1's suggestion. Becomes `--tb-events-glob`.
+
+**7. Checkpoint glob** (`checkpoint_glob`) — NEW in v0.3.0
+- `question`: "Where does training save checkpoints? The AR-SAVE block uses this glob to discover new files after each run and promote the best one."
+- `options`: Phase 1-detected candidates first (pre-selected), plus common alternatives:
+  - `output_dir/checkpoint-*/` (HF Trainer)
+  - `lightning_logs/*/checkpoints/*.ckpt` (Lightning defaults)
+  - `outputs/*/checkpoints/best.pt` (Hydra + Lightning composed)
+  - `checkpoints/*.pt` (plain torch.save)
+  - `accelerate_state/*/` (accelerate.save_state)
+  - `"skip — host doesn't save to a conventional location"` (AR-SAVE falls back to its priority-1 torch-state snapshot path; agent may need to monkey-patch a save call from train.py)
+  - `"Other (glob)"`
+- Becomes `--checkpoint-glob`. Drives the wrapper-mode AR-SAVE priority-0 discovery path: when set, AR-SAVE expands the glob after each run, picks the newest matching file/dir by mtime, and copies into `runs/{id}/state.pt` (or `state/` if a directory). When `skip`, AR-SAVE uses the legacy in-process torch-state capture.
+
+**8. Primary metric** (`primary_metric`)
+- `question`: "Which metric is the single source of truth for 'did this run improve'?"
+- `options`: top metric candidates from Phase 1 with inferred direction, e.g. `val/loss (min)`, `eval/top1 (max)`. Include `"Other (type metric=direction)"`.
 - Becomes `--primary-metric` + `--primary-direction`.
 
-**8. Hard constraints** (`hard_constraints`)
+**9. Hard constraints** (`hard_constraints`)
 - `question`: "Any hard constraints? (Violations mark the run invalid regardless of primary.)"
 - `options`: `"None"` (default), plus 2–3 common candidates if auxiliary metrics look like resource bounds (`peak_vram_mb`, `tokens_per_sec`). Multi-select + free-text.
 - Parse each as `{name, op, threshold}`; operators `<=`, `<`, `>=`, `>`.
 
-**9. Mutation scope** (`mutation_scope`)
+**10. Mutation scope** (`mutation_scope`)
 - `question`: "Which modules/classes are in-scope for train.py to monkey-patch?"
 - `options`: dotted-path candidates from Phase 1; multi-select + free-text. Include `"(advisory — will skip)"`.
 
-**10. Default run duration** (`seconds`)
+**11. Default run duration** (`seconds`)
 - `question`: "Default per-run time budget?"
 - `options`: `300`, `600`, `900`, `1800`, `"Custom"`.
 
-**11. Runner** (`runner`)
+**12. Runner** (`runner`)
 - `question`: "How should `ar` launch training?"
 - `options`: Phase 1's inferred runner first (pre-selected), then alternatives, then `"Custom"`. Examples:
   - `accelerate launch --config_file configs/accelerate_8gpu.yaml`
   - `torchrun --nproc-per-node 8`
+  - `python -m <your_project>.training.main` (Hydra apps often do this)
   - `python`
   - `custom`
 - Stored verbatim.
 
+**13. wandb project** (`wandb_project`)
+- Skip entirely if metric backend (item 6) is not `wandb` or `auto`.
+- `question`: "Which wandb project should runs log to?" — with detected preview if Phase 1 found one.
+- `options`: detected value (pre-selected), then `"Other (type)"`. Optional — accept empty.
+- Becomes `--wandb-project`.
+
 ### Structuring the AskUserQuestion call
 
-The 11 items go into **one** `AskUserQuestion` invocation (the tool supports multiple items per call). Items 2 and 3 are conditionally relevant — if the user is expected to pick `function` or `custom` in item 1, the skill may choose to split into two rounds: first item 1 alone (to branch), then items 2–11 with the CLI-args / resume-flag items included or omitted accordingly. Both approaches are acceptable; the one-call variant is preferred when the detected entry pattern is high-confidence `argparse-cli`.
+The 13 items go into **one** `AskUserQuestion` invocation (the tool supports multiple items per call). Items 2, 3, and 13 are conditionally relevant based on items 1 and 6. The skill may split into two rounds — first item 1 alone (to branch on entry pattern), then items 2–13 with the CLI-args / resume-flag / wandb-project items included or omitted accordingly. Both approaches are acceptable; the one-call variant is preferred when Phase 1 detected a high-confidence entry pattern + metric backend.
+
+The `custom` metric-backend path and the `tensorboard` events-glob capture are follow-up AskUserQuestion calls by design — each needs free-text input that doesn't fit the main interview's option/multi-select schema. These follow-ups are exempt from the "three permitted prompts" rule.
 
 ### Why these items
 
-The new v0.2.0 items (1–5) exist because the v0.1 flow generated a TODO-stub `train.py` that crashed on first `ar run`. Capturing the entry pattern, baseline CLI args, and resume-flag name lets `ar init` render a working wrapper-mode `train.py` that actually executes on iteration 1.
+Items 1–3 + 12 exist because a v0.1-style flow would generate a TODO-stub `train.py` that crashes on first `ar run`. Capturing the entry pattern, baseline overrides, resume anchor, and runner lets `ar init` render a working wrapper-mode `train.py` that actually executes on iteration 1.
 
-The classic items (6–11) are unchanged from v0.1 — they remain the minimum needed to stamp program.md with enough context for the agent's loop.
+Items 4 + 6 + 7 are the v0.3.0 framework-agnostic additions: they decouple the rendered templates from the HF-Trainer-plus-wandb assumption baked into earlier versions, letting any mainstream pipeline (HF, Hydra, Lightning, plain PyTorch, DeepSpeed, FSDP) drop in with the right metric probe and checkpoint discovery wired up.
+
+Items 5 + 8–11 + 13 are the minimum program-spec items needed to stamp program.md with enough context for the agent's loop.
 
 See `references/interview-questions.md` for verbatim option copy and direction-inference heuristics.
 
@@ -282,7 +355,7 @@ Format: `{YYMMDD}-{kebab}`, lowercase, ASCII only.
 - `YYMMDD` = today's date in local time.
 - `kebab` = kebab-case of either:
   - the `[topic]` positional argument (`$ARGUMENTS`), if provided; or
-  - the chosen goal phrase from interview item 6, truncated to 4–5 meaningful words.
+  - the chosen goal phrase from interview item 5, truncated to 4–5 meaningful words.
 
 Strip articles, stopwords, punctuation. Collapse whitespace to `-`. Max kebab length: 40 chars.
 
@@ -308,7 +381,8 @@ Write the shim (unchanged from v0.1) to `.autoresearch/ar.py` via the `Write` to
 
 Resolves the plugin's lib/ directory, injects it on sys.path, and delegates
 to ar.cli.main(). Runs under the target project's uv-managed venv so torch,
-wandb, accelerate, etc. are all resolvable.
+and any framework the host uses (accelerate / lightning / hydra / etc.), are
+all resolvable.
 
 Deps `jinja2` and `psutil` are not part of typical ML project dependencies, so
 if they're missing in the active interpreter, this shim re-exec's itself via
@@ -388,42 +462,58 @@ With the shim in place, materialize the expr. Build the command with the flags d
 ```
 uv run python .autoresearch/ar.py init \
   --expr {slug} \
-  --goal "<from interview 6>" \
-  --primary-metric "<from interview 7 name>" \
+  --goal "<from interview 5>" \
+  --primary-metric "<from interview 8 name>" \
   --primary-direction <min|max> \
-  --runner "<from interview 11 verbatim>" \
-  --seconds <from interview 10> \
+  --runner "<from interview 12 verbatim>" \
+  --seconds <from interview 11> \
   [--constraints "<name> <op> <threshold>" ...] \
   [--mutation-scope "<comma,separated,dotted.paths>"] \
-  [--entry-pattern <argparse-cli|function|custom>] \
+  [--entry-pattern <argparse-cli|function|hydra|custom>] \
   [--entry-main-module <dotted.path>] \
-  [--cli-args-json '<JSON dict>'] \
-  [--wandb-project <name>] \
-  [--distributed-framework <accelerate|deepspeed|fsdp|ddp|none>] \
-  [--resume-flag-name <flag_without_leading_dashes>]
+  [--cli-args-json '<JSON value>'] \
+  [--distributed-framework <accelerate|deepspeed|fsdp|ddp|lightning|none|auto>] \
+  [--resume-flag-name <flag_or_override_key_without_leading_dashes>] \
+  [--metric-backend <wandb|tensorboard|log|custom|auto>] \
+  [--tb-events-glob '<glob>'] \
+  [--metric-extract-code '<base64-encoded python body>'] \
+  [--checkpoint-glob '<glob>'] \
+  [--wandb-project <name>]
 ```
 
 ### Flag semantics (must match `ar init` exactly)
 
-Core flags (unchanged from v0.1):
+Core flags:
 
 - `--expr` — the generated slug. Required.
 - `--goal` — free-form goal string. Required. Quote it.
-- `--primary-metric` — wandb key verbatim (e.g. `val/loss`). Required.
+- `--primary-metric` — metric key verbatim (e.g. `val/loss`, `val_loss`, `eval/top1`). Required.
 - `--primary-direction` — literal `min` or `max`. Required.
 - `--runner` — full invocation string. Required.
 - `--seconds` — integer seconds. Required.
 - `--constraints` — repeatable; each value is `"name op value"`. Optional.
 - `--mutation-scope` — single flag, comma-separated dotted paths. Optional.
 
-New v0.2.0 flags (all optional — unset means legacy `function`-mode rendering for back-compat):
+Entry-point flags:
 
-- `--entry-pattern` — `argparse-cli` / `function` / `custom`. Default is equivalent to `custom`. Set to `argparse-cli` to render `train_wrapper.py.jinja`.
-- `--entry-main-module` — dotted path for argparse-cli mode, e.g. `pivot.training.main`. **Required when `--entry-pattern=argparse-cli`**; `ar init` rejects the call otherwise.
-- `--cli-args-json` — single JSON-object string. Becomes `CLI_OVERRIDES` dict in wrapper train.py. Default `{}`.
-- `--wandb-project` — project name string.
-- `--distributed-framework` — one of the choices. Default `accelerate`.
-- `--resume-flag-name` — string without `--` prefix (e.g. `resume_from_checkpoint`). If unset, wrapper exports `AR_RESUME_CKPT` env var but doesn't inject a CLI flag.
+- `--entry-pattern` — `argparse-cli` / `function` / `hydra` / `custom`. Default is equivalent to `custom`. Set to `argparse-cli` or `hydra` to render the wrapper-mode `train_wrapper.py.jinja`; Hydra mode additionally formats `CLI_OVERRIDES` as a list of override strings.
+- `--entry-main-module` — dotted path for argparse-cli / hydra / function modes, e.g. `myproject.training.main`. **Required when `--entry-pattern` is `argparse-cli` or `hydra`**; `ar init` rejects the call otherwise.
+- `--cli-args-json` — single JSON value string. Dict for argparse-cli (becomes `CLI_OVERRIDES = {...}`), list-of-strings for hydra (becomes `CLI_OVERRIDES = [...]`). Default `{}`.
+- `--resume-flag-name` — string without `--` prefix (e.g. `resume_from_checkpoint`) for argparse-cli, or a Hydra override key (e.g. `trainer.resume_from_checkpoint`) for hydra. If unset, the wrapper exports `AR_RESUME_CKPT` env var but doesn't inject a flag/override.
+- `--distributed-framework` — one of `accelerate` / `deepspeed` / `fsdp` / `ddp` / `lightning` / `none` / `auto`. Default `auto` (new v0.3.0 default — `ar run` introspects the `--runner` command at launch time).
+
+Metric + checkpoint flags (v0.3.0):
+
+- `--metric-backend` — `wandb` / `tensorboard` / `log` / `custom` / `auto`. Default `auto`. Drives how `ar run` extracts the primary metric after each run:
+  - `wandb` → read `wandb/run-*/files/wandb-summary.json` via pointer file (v0.2.0 behavior).
+  - `tensorboard` → expand `--tb-events-glob` and read the last scalar event for `--primary-metric`.
+  - `log` → regex-scan `run.log` for a user-supplied pattern (default: `{primary_metric}=<float>`).
+  - `custom` → eval the body from `--metric-extract-code` with `run_dir` and `run_log_text` in scope.
+  - `auto` → try wandb → tensorboard → log in order; first non-empty result wins.
+- `--tb-events-glob` — glob relative to project cwd, e.g. `runs/*/events.out.tfevents.*` or `lightning_logs/*/events.out.tfevents.*`. Required when `--metric-backend=tensorboard`.
+- `--metric-extract-code` — base64-encoded Python body. Required when `--metric-backend=custom`; ignored otherwise. `ar init` decodes and embeds into program.md + train.py so both are self-contained.
+- `--checkpoint-glob` — glob relative to project cwd, e.g. `output_dir/checkpoint-*/`, `lightning_logs/*/checkpoints/*.ckpt`, `outputs/*/model.safetensors`. Drives AR-SAVE's priority-0 path: the wrapper expands this glob after the training subprocess exits, picks the newest match, and copies into `runs/{id}/state.pt` (or `state/` for a directory). If unset, AR-SAVE uses the priority-1 in-process torch-state capture.
+- `--wandb-project` — project name string. Only relevant when metric backend is `wandb` or `auto`. Becomes the `wandb.init(project=...)` value in wrapper mode.
 
 Do NOT pass `--parent-ckpt` — that flag is reserved for `chain-init`.
 
@@ -433,16 +523,17 @@ Source of truth for:
 
 - Creating `.autoresearch/{slug}/` with `program.md`, `prepare.py`, `train.py` (or `train_wrapper.py` body if wrapper mode), empty `runs/`, `results.tsv` with header, and `.ar-session.json`.
 - Selecting train.py template by `--entry-pattern`:
-  - `argparse-cli` → `train_wrapper.py.jinja` (new in v0.2.0; uses `runpy.run_module`).
-  - `function` / `custom` → legacy `train.py.jinja` (function-mode entry).
-- Stamping `program.md` with the new "Entry point" section (pattern, main module, wandb project, distributed framework, resume flag, baseline CLI args).
+  - `argparse-cli` → `train_wrapper.py.jinja` in argparse mode (uses `runpy.run_module` with synthesized `sys.argv`).
+  - `hydra` → `train_wrapper.py.jinja` in hydra mode (invokes the entry module with a list of `key=value` overrides).
+  - `function` / `custom` → legacy `train.py.jinja` (function-mode or pure-agent-wiring entry).
+- Stamping `program.md` with the "Entry point" section (pattern, main module, metric backend, checkpoint glob, distributed framework, resume flag, baseline overrides).
 - Picking prepare.py mode (thin-wrapper vs full-prep).
 
 The skill does NOT render any templates itself. All file materialization is `ar init`'s job.
 
 ### Error handling
 
-- Non-zero exit from `ar init`: print the tail of its stderr (10–20 lines) and stop. Common causes: missing `pyproject.toml`, broken venv, `--entry-pattern=argparse-cli` without `--entry-main-module`. Do not retry automatically.
+- Non-zero exit from `ar init`: print the tail of its stderr (10–20 lines) and stop. Common causes: missing `pyproject.toml`, broken venv, `--entry-pattern=argparse-cli` or `hydra` without `--entry-main-module`, `--metric-backend=tensorboard` without `--tb-events-glob`, `--metric-backend=custom` without `--metric-extract-code`. Do not retry automatically.
 - If `uv` is not installed: print `install uv: https://docs.astral.sh/uv/` and stop.
 
 ---
@@ -461,7 +552,7 @@ Nothing else. Do not summarize interview answers or list created files — the u
 
 ## Rules of engagement
 
-- **Three permitted prompts only.** Phase 0 remediation (if probe red), Phase 2 interview, Phase 3 collision. No other AskUserQuestion calls.
+- **Three permitted prompts only.** Phase 0 remediation (if probe red), Phase 2 interview, Phase 3 collision. No other AskUserQuestion calls — with two exempted micro-followups: (a) when Phase 2 item 6 chooses `tensorboard`, one free-text prompt for the events glob; (b) when item 6 chooses `custom`, one free-text prompt for the Python extraction snippet. Both are mechanical captures of free-text input that the main interview's option schema cannot carry.
 - **Read budget applies to Phase 1 only.** Once the interview starts, no further project reads unless `ar init` fails.
 - **Write budget: exactly one file via the `Write` tool.** That file is `.autoresearch/ar.py`, only if absent. Everything else is created by `ar init` via `Bash`.
 - **No git operations.** Setup does not commit, branch, or stash.

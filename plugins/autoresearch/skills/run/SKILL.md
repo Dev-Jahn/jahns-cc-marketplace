@@ -14,7 +14,7 @@ The design invariant behind every rule below: **context cost per iteration must 
 ## Mental model in 30 seconds
 
 - One `{expr}/train.py` is the only file to edit. Everything else is read-only.
-- `ar run` handles: snapshot → launch → watchdog → wandb parse → verdict → advance/revert → termination eval → `result.json`.
+- `ar run` handles: snapshot → launch → watchdog → metric extraction (via the configured metric backend: wandb / tensorboard / log / custom / auto) → verdict → advance/revert → termination eval → `result.json`.
 - `best.json` + `runs/{best_id}/train.py` are the ground truth. `ar` auto-restores train.py on every non-advance disposition, so a crashing edit disappears — write the next edit against the restored baseline.
 - Chain mode: when the expr terminates with chain budget remaining, design a follow-up expr, call `ar chain-init --rationale "..."`, re-enter non-interactively against the child slug.
 
@@ -97,9 +97,9 @@ Edit the one file. Parameter tweaks, monkey-patches, structural changes — all 
 uv run python .autoresearch/ar.py run
 ```
 
-That is the entire command. `ar run` owns: startup reconciliation, snapshot (copying current `train.py` to `runs/{run_id}/train.py`), `prepare.py` contract check, subprocess launch with process-tree-aware watchdog, wandb pointer binding, metric extraction + constraint eval, two-stage atomic `best.json` + `best_ckpt/` commit (on advance), train.py restore (on any non-advance verdict), `results.tsv` append, termination eval, `result.json` write.
+That is the entire command. `ar run` owns: startup reconciliation, snapshot (copying current `train.py` to `runs/{run_id}/train.py`), `prepare.py` contract check, subprocess launch with process-tree-aware watchdog, metric-backend-appropriate binding (wandb pointer file / tensorboard events glob / stdout-regex anchor / custom snippet), metric extraction + constraint eval, two-stage atomic `best.json` + `best_ckpt/` commit (on advance — copying from `--checkpoint-glob`'s latest match when set, or from the in-process torch-state capture otherwise), train.py restore (on any non-advance verdict), `results.tsv` append, termination eval, `result.json` write.
 
-**Do not run anything else here.** Do not check process status, do not run `wandb` commands, do not touch checkpoints manually, do not inspect `runs/` during the run. `ar` is the sole orchestrator.
+**Do not run anything else here.** Do not check process status, do not run tracker CLIs (e.g. `wandb`, `tensorboard`), do not touch checkpoints manually, do not inspect `runs/` during the run. `ar` is the sole orchestrator.
 
 ### Step 5 — Read `result.json`
 
@@ -170,7 +170,7 @@ Explicit forbidden list:
 - Do not edit `{expr}/program.md`, `{expr}/best.json`, `{expr}/results.tsv`, `{expr}/runs/**`, `{expr}/best_ckpt/**`, `{expr}/batch_contract.json`, `.autoresearch/.chain-session.json`, `.autoresearch/{expr}/.ar-session.json`, or any file under `.autoresearch/` other than `{expr}/train.py`.
 - Do not edit **anything** in the host project outside `.autoresearch/`. The project's source tree (e.g. `<your_project>/model/`, `<your_project>/training/`, `<your_project>/attn/`, or whatever the host uses), config files, pyproject.toml, CLAUDE.md — all read-only.
 - Do not `git add`, `git commit`, `git reset`, or touch the working tree's git state. The experiment loop lives entirely outside git.
-- Do not manually touch `runs/{run_id}/state.pt`, `best_ckpt/state.pt`, `best_ckpt/meta.json`, or any wandb artifact.
+- Do not manually touch `runs/{run_id}/state.pt` (or `state/` dir), `best_ckpt/state.pt`, `best_ckpt/meta.json`, or any tracker artifact (wandb run dirs, tensorboard event files, mlflow runs, etc.).
 
 Why this invariant is hard: the whole revert/advance/chain machinery depends on one and only one file mutating per iteration. Anything outside train.py is immune to `ar`'s restore logic; a stray edit to `prepare.py` breaks the data contract for every subsequent run with no automatic recovery. Keeping the write surface to one file makes the loop's semantics tractable.
 
@@ -224,7 +224,7 @@ Steady-state target: **≤ 2 bash invocations per iteration** and **≤ 2-3 `Rea
 
 ## One concrete iteration example
 
-Context: `{expr-slug}` expr, primary = `val/loss` (min), current best = 0.851 at r0037.
+Context: `{expr-slug}` expr, primary = `val/loss` (min), current best = 0.851 at r0037. Metric backend is `wandb` (HF Trainer host — see `references/case-studies.md` Case A for the full walkthrough and Cases B & C for Hydra/TensorBoard and plain-PyTorch/stdout-log variants).
 
 ```
 # Step 1 — state
@@ -250,8 +250,8 @@ r0042 revert  val/loss=0.853  note: "warmup 500 → 1000"
 
 ```python
 # Step 3 — edit {expr}/train.py (using Edit tool, single line change)
-# Old: LEARNING_RATE = 2.5e-4
-# New: LEARNING_RATE = 2e-4
+# Old: CLI_OVERRIDES["learning_rate"] = 2.5e-4
+# New: CLI_OVERRIDES["learning_rate"] = 2e-4
 # Old: RUN_NOTE = "warmup 500 -> 1000"
 # New: RUN_NOTE = "lr 2.5e-4 -> 2e-4 (extend r0039 direction)"
 ```
@@ -259,8 +259,8 @@ r0042 revert  val/loss=0.853  note: "warmup 500 → 1000"
 ```
 # Step 4 — execute
 $ uv run python .autoresearch/ar.py run
-[r0043] launched: python train.py  |  seconds=600
-[r0043] wandb run: xyz789  |  val/loss=0.844  peak_vram=42800
+[r0043] launched: accelerate launch --config_file configs/accelerate.yaml train.py  |  seconds=600
+[r0043] metric backend=wandb, checkpoint glob=output_dir/checkpoint-*  |  val/loss=0.844  peak_vram=42800
 [r0043] advance: val/loss 0.851 → 0.844  (best updated)
 ```
 
@@ -276,6 +276,8 @@ $ cat .autoresearch/{expr-slug}/runs/r0043/result.json
 
 Total context cost for this iteration: 3 bash invocations, 0 additional `Read` calls (used `ar status` output, not file reads). Next iteration will probably skip the `ar status --last 5` call since nothing has changed since it was just printed.
 
+The protocol above is framework-neutral: the same 6 steps, the same budget, the same `ar run` single-command invocation, regardless of whether the host is HF Trainer + wandb, a Hydra + TensorBoard pipeline with nested overrides, or a plain-PyTorch script that prints metrics to stdout. Only what gets edited inside `CLI_OVERRIDES` changes per project. See `references/case-studies.md` for the three worked variants.
+
 ## Additional Resources
 
 ### Reference Files
@@ -283,5 +285,6 @@ Total context cost for this iteration: 3 bash invocations, 0 additional `Read` c
 - **`references/loop-protocol.md`** — Step-by-step operational detail for each loop phase, edge cases (first iteration, resume after interrupt, empty `runs/`), and worked examples of `result.json` interpretation.
 - **`references/chain-transition.md`** — Full chain-transition procedure: what `ar report` contains, how to compose the rationale, the exact `ar chain-init` flags and inheritance semantics, handling of `chain-init` failure and retry, and non-interactive re-entry mechanics.
 - **`references/write-discipline.md`** — Exhaustive list of files under `.autoresearch/` and the host project with their permitted operations (read / edit-train.py-only / fully-forbidden), plus the rationale for each boundary.
+- **`references/case-studies.md`** — Three worked iteration examples across different framework/metric-backend combinations: Case A (HF Trainer + wandb + `output_dir/checkpoint-*` glob), Case B (Hydra + TensorBoard + nested overrides + `outputs/*/checkpoints/best.pt`), Case C (plain PyTorch + stdout-log regex + no tracker install required).
 
 Consult these when a specific phase of the loop needs deeper detail than the inline prose provides. For steady-state operation, this SKILL.md body is sufficient.

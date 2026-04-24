@@ -150,6 +150,11 @@ class Session:
     created_at: str
     baseline_acknowledged: bool = False
     resume_mode: str | None = None  # "continue" | "fresh" | None
+    # v0.3.0: metric backend + distributed framework metadata. Kept separate
+    # from runner.kind (launcher shape) so the same torchrun runner can pair
+    # with any of accelerate/deepspeed/fsdp/ddp/lightning/none semantics.
+    metric_backend: str = "wandb"  # wandb | tensorboard | log | custom
+    distributed_framework: str = "accelerate"  # accelerate | deepspeed | fsdp | ddp | lightning | none
 
 
 @dataclass
@@ -199,6 +204,9 @@ class ProgramMeta:
     per_run_seconds: int
     parent_expr: str | None = None
     parent_ckpt: str | None = None
+    metric_backend: str = "wandb"
+    distributed_framework: str = "accelerate"
+    checkpoint_glob: str | None = None
 
 
 # ------------------------- JSON I/O helpers -------------------------------
@@ -295,6 +303,8 @@ def best_record_from_dict(d: dict[str, Any]) -> BestRecord:
 
 
 def session_from_dict(d: dict[str, Any]) -> Session:
+    # v0.3.0: backward compat — pre-0.3 sessions have no metric_backend /
+    # distributed_framework fields, so default them on load.
     return Session(
         expr=d["expr"],
         duration_seconds=int(d["duration_seconds"]),
@@ -305,6 +315,8 @@ def session_from_dict(d: dict[str, Any]) -> Session:
         created_at=d["created_at"],
         baseline_acknowledged=bool(d.get("baseline_acknowledged", False)),
         resume_mode=d.get("resume_mode"),
+        metric_backend=d.get("metric_backend") or "wandb",
+        distributed_framework=d.get("distributed_framework") or "accelerate",
     )
 
 

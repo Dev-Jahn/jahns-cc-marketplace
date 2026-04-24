@@ -1,6 +1,6 @@
 # Project analysis — extended heuristics
 
-Read this when SKILL.md's Phase 1 quick scan produced fewer than 2 strong candidates for any of {goal, primary-metric, mutation-scope, runner}. These heuristics cover the unusual project layouts that the default scan misses.
+Read this when SKILL.md's Phase 1 quick scan produced fewer than 2 strong candidates for any of {goal, primary-metric, mutation-scope, runner, metric-backend, checkpoint-glob, entry-pattern}. These heuristics cover the unusual project layouts that the default scan misses.
 
 ## Editable-install detection
 
@@ -13,18 +13,28 @@ The default check is `[tool.setuptools.packages.find]` in `pyproject.toml`. Also
 
 If none are present, the project may still be editable-installable via a `src/` layout implicit in the `[project]` table. Run `grep -l '__init__.py' -r src/ 2>/dev/null | head -5` to detect package roots.
 
-## wandb metric discovery
+## Metric-backend + metric discovery
 
-Primary source: `wandb/run-*/files/wandb-summary.json`. Each is a flat JSON dict. Pick the 3 most recent by mtime.
+Phase 1 signal 3 chooses the backend and extracts a list of metric-name candidates from it.
 
-Glob pattern: `wandb/run-*/files/wandb-summary.json` (NOT `wandb/latest-run/` — the symlink races under DDP).
+### Backend selection (ordered; first hit wins)
 
-If no `wandb/` directory exists, fall back in order:
+| Evidence | Backend | Extraction |
+|---|---|---|
+| `wandb/run-*/files/wandb-summary.json` exists (NOT `wandb/latest-run/` — symlink races under DDP) | `wandb` | Read up to 3 most recent by mtime; union of all top-level keys. |
+| `events.out.tfevents.*` files anywhere under the project | `tensorboard` | Use `tensorboard.backend.event_processing.event_accumulator` to enumerate scalar tags; capture the glob that matches (`runs/*/events.out.tfevents.*`, `lightning_logs/*/events.out.tfevents.*`, `outputs/*/tensorboard/events.out.tfevents.*`, etc.). |
+| `mlruns/` dir with `mlruns/*/metrics/` | `custom` (mlflow) | Surface a TODO + v0.4.0 note; capture the tag names by listing `mlruns/*/*/metrics/`. |
+| Nothing detectable | `log` | Grep the training entrypoint for `print(f".*={'{'}.*:.2f|.4f|.6f{'}'}")`, `logger.info` / `.log` calls referencing numeric tokens, or any `f"{name}=..."` patterns. Offer the distinct metric-name tokens as candidates. |
 
-1. `tb_logs/`, `tensorboard/`, `runs/` (tensorboard) — grep for `.add_scalar("name", ...)` calls.
-2. `logs/*.log`, `*.jsonl` — scan for lines matching `^{metric}=<number>$` or JSONL with a `metrics` key.
-3. `trackio/` (huggingface trackio) — read the latest run's `metrics.jsonl`.
-4. If still empty, propose synthetic defaults: `val/loss (min)`, `train/loss (min)`, `eval/accuracy (max)`.
+If none of the above produce ≥ 2 candidates, fall back to synthetic defaults: `val/loss (min)`, `train/loss (min)`, `eval/accuracy (max)`.
+
+### Low-confidence triggers
+
+- A single stale tfevents file (mtime older than the most recent git commit).
+- A `wandb/` dir with only `wandb/debug.log` and no run subdirs (wandb-offline failure earlier).
+- An `mlruns/` dir with no experiments.
+
+In any low-confidence case, mark the detection low-confidence so Phase 2 item 6 pushes harder for explicit user confirmation.
 
 ### Direction inference table
 
@@ -88,3 +98,65 @@ When in doubt: pick thin-wrapper. The generated stub has TODO markers the user c
 `git log --oneline -n 20` against the current branch. Look for recurring scope tokens in commit subjects (`loss:`, `attn:`, `model:`, `train:`) — these are strong signals for what the user is actively iterating on, and should be elevated as the top goal candidate.
 
 If the repo is a worktree dedicated to autoresearch testing (branch name contains `ar-test`, `autoresearch`, `experiment`), prefer the parent branch's commit log via `git log origin/main..HEAD` and `git log -n 20 origin/main`.
+
+## Config system detection (new in v0.3.0)
+
+Grep the entrypoint and its first-layer imports in this order; first hit wins. The config system directly chooses `--entry-pattern` and shapes the `--cli-args-json` payload.
+
+| Evidence | Config system | Entry pattern | v0.3.0 supported? |
+|---|---|---|---|
+| `@hydra.main(...)`, `from hydra import main`, `from omegaconf import OmegaConf`, `hydra.utils.instantiate` | hydra | `hydra` | Yes |
+| `LightningCLI(` / `from lightning.pytorch.cli import LightningCLI` | lightning-cli | `custom` (v0.3.0); native in v0.4.0 | No — TODO |
+| `from fire import Fire` / `fire.Fire(` | fire | `custom` (v0.3.0); native in v0.4.0 | No — TODO |
+| `argparse.ArgumentParser(` / `HfArgumentParser(` / `simple_parsing` | argparse-cli | `argparse-cli` | Yes |
+| Top-level `def main(cfg: Config):` imported by a tiny wrapper | function | `function` | Yes |
+| None of the above | unknown | `custom` | Yes (agent wires it) |
+
+### Hydra-specific signals
+
+When hydra is detected, also check:
+
+- **Config search path**: grep the entrypoint for `@hydra.main(config_path="conf", config_name="config")`. If found, read `conf/config.yaml` (or the named file) to extract the top-level keys — these are the namespaces the user can override (e.g. `optimizer.lr=...`, `model.hidden_dim=...`). Use them to build the baseline `CLI_OVERRIDES` list in interview item 2.
+- **Composition groups**: `conf/optimizer/`, `conf/model/`, `conf/trainer/` subdirectories signal composition-style configs. Override format then supports group swaps (`optimizer=adamw` selects `conf/optimizer/adamw.yaml`). Surface 2-3 concrete examples in the interview preview.
+- **Resume anchor**: hydra apps typically accept a key like `trainer.resume_from_checkpoint=/path/to/ckpt` rather than a flag. Detect by grepping config files for `resume_from_checkpoint:` or `ckpt_path:`. Capture the dotted path as the `--resume-flag-name` value.
+
+## Checkpoint convention detection (new in v0.3.0)
+
+Grep the entrypoint and the modules it imports, then rank by filesystem evidence. The detection yields a `--checkpoint-glob` suggestion.
+
+| Evidence | Suggested glob | Notes |
+|---|---|---|
+| `trainer.save_model(`, `Trainer(...).save_model(`, `output_dir="..."` in `TrainingArguments` | `{output_dir}/checkpoint-*/` (resolve `{output_dir}` from `TrainingArguments` default or a CLI-parseable argument) | HF Trainer default; `checkpoint-<step>` subdirs. |
+| `save_pretrained(` on a top-level model/tokenizer | `{output_dir}/` (no glob needed — flat) | Usually paired with `output_dir`. |
+| `ModelCheckpoint(` (lightning), `dirpath=...` arg | `lightning_logs/*/checkpoints/*.ckpt` (default) or the detected `dirpath` | Lightning default is `lightning_logs/version_N/checkpoints/`. |
+| `@hydra.main` + Lightning `ModelCheckpoint` | `outputs/*/checkpoints/best.pt` or `outputs/*/checkpoints/*.ckpt` | Hydra's default cwd is `outputs/YYYY-MM-DD/HH-MM-SS/`, so Lightning's relative `lightning_logs/` becomes `outputs/*/lightning_logs/*/checkpoints/*.ckpt`. Simplify to the typical user-configured path. |
+| `accelerator.save_state(` | `checkpoints/*/` or the detected dirpath | Accelerate writes a directory per state (optimizer, scheduler, sampler shards). |
+| `torch.save(model.state_dict(), "...")` with a literal path | Extract the literal; convert to glob if it's templated | Plain PyTorch. |
+| Nothing detectable | Suggest `skip — host doesn't save to a conventional location` | AR-SAVE falls back to the priority-1 in-process torch-state capture path. |
+
+### Filesystem ranking
+
+If multiple globs are plausible from grep alone, run a quick existence probe on the filesystem:
+
+```bash
+for g in "output_dir/checkpoint-*/" "lightning_logs/*/checkpoints/*.ckpt" "checkpoints/*.pt"; do
+  matches=$(ls -d $g 2>/dev/null | wc -l)
+  echo "$g: $matches match(es)"
+done
+```
+
+A glob with ≥ 1 existing match outranks one with zero matches. Present the top 2–3 in the interview.
+
+## Entry-pattern detection recap
+
+When Phase 1 signal 4 needs to rank candidates across multiple entrypoint scripts, use this priority ladder:
+
+1. File contains `@hydra.main(...)` decorator → **hydra**, highest rank.
+2. File contains `argparse.ArgumentParser(` or `HfArgumentParser(` AND an `if __name__ == "__main__":` block → **argparse-cli**.
+3. File contains `LightningCLI(` → **custom** (with v0.4.0 TODO).
+4. File contains `fire.Fire(` → **custom** (with v0.4.0 TODO).
+5. File defines a top-level `main(**kwargs)` and is imported by at least one other file in the package → **function**.
+6. File has an `if __name__ == "__main__":` block with free-form bash-like dispatch (no argparse) → **custom**.
+7. Fallback → **custom**.
+
+Ties broken by: (a) which file is referenced in CLAUDE.md's training command block, (b) which file is named `train.py` or `main.py`, (c) mtime (newest wins).

@@ -56,17 +56,25 @@ class LaunchResult:
 
 
 def parse_runner_string(runner: str) -> dict[str, Any]:
-    """Parse the verbatim runner string the setup skill stores (e.g.
-    `accelerate launch --config_file configs/accelerate_8gpu.yaml --num_processes 8`,
-    `torchrun --nproc-per-node 4`, `python`, or an arbitrary custom prefix) into
-    the structured runner_spec dict used throughout ar.
+    """Parse the verbatim runner string the setup skill stores into the structured
+    runner_spec dict used throughout ar.
+
+    Examples (rotated — no single runner is canonical, pick whichever the host
+    project uses):
+      - `torchrun --nproc-per-node 4`
+      - `deepspeed --num_gpus 4`
+      - `python`  (single-process)
+      - `accelerate launch --config_file configs/accelerate_8gpu.yaml --num_processes 8`
+      - `custom/launcher.sh --foo bar`  (any verbatim prefix — parsed as kind="custom")
 
     Returns: {"kind", "config_file", "num_processes", "extra_args", "argv"?}
 
     The verbatim string is the source of truth the user confirmed during the
     interview — ar is responsible for splitting it into the fields build_command
     needs, never vice versa. Returns kind="custom" + argv=<tokens> when the
-    leading command doesn't match a known runner.
+    leading command doesn't match a known runner. `distributed_framework` is
+    tracked separately on `Session` and is orthogonal to `kind` (e.g. a torchrun
+    kind can pair with `fsdp` or `ddp` framework semantics).
     """
     import shlex
 

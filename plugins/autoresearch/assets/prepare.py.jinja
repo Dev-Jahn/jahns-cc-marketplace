@@ -5,14 +5,17 @@ you ever make for this experiment happen in `train.py`.
 
 Contract (see `ar` CLI §prepare.py responsibilities):
   - `build_train_loader()` / `build_val_loader()` — re-expose the host
-    project's existing dataloaders.
+    project's existing dataloaders (function/custom mode only).
   - `primary_spec` — {name, direction}.
   - `aux_keys`, `hard_constraints` — constants used by `ar`.
-  - `extract_metrics(wandb_summary)` — project-specific key extraction.
-  - `extract_metrics_from_log(log_text)` — log-scan fallback.
+  - `extract_metrics(...)` — project-specific key extraction. Signature varies
+    by metric_backend (see below).
+  - `extract_metrics_from_log(log_text)` — log-scan fallback. Always present.
   - `resume_ckpt_path()` — reads program.md's `parent_ckpt` declaration.
-  - 1-batch self-test at import time; caches batch signature to
-    `batch_contract.json` and enforces it on subsequent runs.
+  - 1-batch self-test at import time (function/custom mode only).
+
+Metric backend: `{{ metric_backend }}` — see the extract_metrics body below
+for the per-backend contract.
 """
 
 from __future__ import annotations
@@ -23,15 +26,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-{% if entry_pattern != "argparse-cli" %}
+{% if entry_pattern not in ["argparse-cli", "hydra"] %}
 # ------------------------- project imports -------------------------------
 # Thin-wrapper mode: delegate to the host project's existing dataloaders.
 # The jinja variable `loader_module` is set by `ar init`.
 #
-# Only rendered for `entry_pattern in {function, custom}`. In argparse-cli
-# (wrapper) mode, the host training script builds its own loaders via its
-# CLI — prepare.py is a metric/resume contract only, so we omit the loader
-# imports entirely to avoid coupling to host-specific loader names.
+# Only rendered for `entry_pattern in {function, custom}`. In argparse-cli /
+# hydra (wrapper) mode, the host training script builds its own loaders via
+# its CLI, so prepare.py is a metric/resume contract only.
 try:
     from {{ loader_module }} import (  # noqa: F401 - re-exported via wrappers below
         build_train_loader as _project_build_train_loader,
@@ -66,26 +68,11 @@ hard_constraints: list[dict[str, Any]] = [
 ]
 
 
-def extract_metrics(wandb_summary: dict) -> dict[str, float]:
-    """Pull primary + auxiliary metrics out of wandb-summary.json."""
-    out: dict[str, float] = {}
-    wanted = [primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)]
-    for key in wanted:
-        val = _get_nested(wandb_summary, key)
-        if val is None:
-            continue
-        try:
-            out[key] = float(val)
-        except (TypeError, ValueError):
-            continue
-    return out
-
-
 def _get_nested(obj: Any, dotted: str) -> Any:
     """Resolve a dotted key with slash-or-dot separators against a nested dict."""
     if obj is None:
         return None
-    if dotted in obj and not isinstance(obj.get(dotted), dict):
+    if isinstance(obj, dict) and dotted in obj and not isinstance(obj.get(dotted), dict):
         return obj[dotted]
     # try dotted splits
     for sep in ("/", "."):
@@ -110,7 +97,12 @@ _LOG_LINE_RE = re.compile(
 
 
 def extract_metrics_from_log(log_text: str) -> dict[str, float]:
-    """Scan `run.log` for `^key=<number>$` lines. Last-seen per key wins."""
+    """Scan `run.log` for `^key=<number>$` lines. Last-seen per key wins.
+
+    Always present regardless of metric_backend — it's the universal fallback
+    `ar run` uses when the primary backend yields no metrics (e.g. the host
+    crashed before flushing wandb summary / writing tb events).
+    """
     wanted = {primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)}
     found: dict[str, float] = {}
     for m in _LOG_LINE_RE.finditer(log_text):
@@ -123,10 +115,99 @@ def extract_metrics_from_log(log_text: str) -> dict[str, float]:
     return found
 
 
+{% if metric_backend == "wandb" %}
+def extract_metrics(wandb_summary: dict) -> dict[str, float]:
+    """Pull primary + auxiliary metrics out of wandb-summary.json."""
+    out: dict[str, float] = {}
+    wanted = [primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)]
+    for key in wanted:
+        val = _get_nested(wandb_summary, key)
+        if val is None:
+            continue
+        try:
+            out[key] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+{% elif metric_backend == "tensorboard" %}
+def extract_metrics(tb_scalars: dict) -> dict[str, float]:
+    """Pull primary + auxiliary metrics out of a tensorboard scalar dict.
+
+    `tb_scalars` is a flat `{tag: last_value}` dict built by `ar` via tbparse
+    (preferred) or `EventAccumulator` (fallback). Tensorboard tag names are
+    usually slash-separated (e.g. `val/loss`), so we reuse the same nested /
+    dotted resolver as the wandb path.
+    """
+    out: dict[str, float] = {}
+    wanted = [primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)]
+    for key in wanted:
+        # Tag may be present as-is OR under slash/dot splits.
+        val = tb_scalars.get(key)
+        if val is None:
+            val = _get_nested(tb_scalars, key)
+        if val is None:
+            continue
+        try:
+            out[key] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+{% elif metric_backend == "log" %}
+def extract_metrics(_unused: Any = None) -> dict[str, float]:
+    """Log backend — delegates to `extract_metrics_from_log`.
+
+    `ar run` calls `extract_metrics_from_log(run.log)` directly for the log
+    backend, so this function is an alias kept only to satisfy the
+    prepare-contract check in `ar run` (which requires the name to exist).
+    """
+    # Shouldn't be invoked directly — the dispatch in ar.cli routes log-backend
+    # runs straight to extract_metrics_from_log. Return empty as a safety.
+    return {}
+{% elif metric_backend == "custom" %}
+def extract_metrics(
+    run_dir: "Path | None" = None,
+    run_log_text: str = "",
+    host_stdout_tail: str = "",
+) -> dict[str, float]:
+    """Custom metric extraction. Signature:
+      (run_dir: Path, run_log_text: str, host_stdout_tail: str) -> dict[str, float]
+
+    `ar` calls this with keyword args after each run. Fill in the body below:
+    the snippet has access to `run_dir` (the current run's directory, which
+    contains `run.log`, `state.pt` if saved, and any artifacts the host wrote),
+    `run_log_text` (the full run.log), and `host_stdout_tail` (the last ~64 KiB
+    of run.log, already decoded — convenient when the log is huge).
+
+    The expected return is a `dict[str, float]` that includes at minimum
+    `primary_spec["name"]`. Missing keys downgrade the run to `invalid`.
+    """
+    out: dict[str, float] = {}
+{% if custom_is_todo %}
+    # TODO: v0.4.0 will ship an MLflow backend. For now, MLflow projects are
+    # treated as custom — fill in the extraction below (typical pattern:
+    # `mlflow.search_runs(...)` or read the local mlruns/{run_id}/metrics/*).
+    raise NotImplementedError(
+        "Custom metric backend has no extraction snippet. Re-run "
+        "`/autoresearch:setup` with --metric-extract-code to paste one in, "
+        "or edit prepare.py manually."
+    )
+{% else %}
+    # --- user-supplied snippet (pasted verbatim from --metric-extract-code) ---
+{{ metric_extract_code | indent(4, True) }}
+    # --- end user snippet ---
+{% endif %}
+    return out
+{% else %}
+def extract_metrics(payload: Any = None) -> dict[str, float]:
+    """Unknown metric_backend={{ metric_backend }}; see wandb path above."""
+    return {}
+{% endif %}
+
+
 # --------------------------- resume pointer ------------------------------
 
 
-def resume_ckpt_path() -> Path | None:
+def resume_ckpt_path() -> "Path | None":
     """Read program.md for parent_ckpt declaration, return resolved path."""
     expr_dir = Path(__file__).resolve().parent
     prog = expr_dir / "program.md"
@@ -148,11 +229,11 @@ def resume_ckpt_path() -> Path | None:
     return state if state.is_file() else None
 
 
-{% if entry_pattern != "argparse-cli" %}
+{% if entry_pattern not in ["argparse-cli", "hydra"] %}
 # ------------------------ loader wrappers + self-test --------------------
-# These are only emitted in function/custom mode. In argparse-cli wrapper
-# mode the host script owns its own dataloader lifecycle, so there is
-# nothing to re-export here.
+# These are only emitted in function/custom mode. In argparse-cli / hydra
+# wrapper modes the host script owns its own dataloader lifecycle, so there
+# is nothing to re-export here.
 
 
 def build_train_loader(*args, **kwargs):

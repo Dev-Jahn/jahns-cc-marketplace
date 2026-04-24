@@ -54,7 +54,8 @@ from typing import Any
 
 from . import history as hist
 from . import launcher as _launcher
-from . import wandb_reader
+from . import metric_reader
+from . import wandb_reader  # noqa: F401 — kept for external importers (alias module)
 from .decider import check_constraints, check_termination, is_improved
 from .schemas import (
     BestRecord,
@@ -338,9 +339,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     # P1: entry-pattern + project-introspection flags. Defaults preserve
     # legacy `function` behavior when the new flags are not supplied.
     entry_pattern = getattr(args, "entry_pattern", None) or "custom"
-    if entry_pattern not in {"argparse-cli", "function", "custom"}:
+    if entry_pattern not in {"argparse-cli", "function", "custom", "hydra"}:
         print(
-            f"error: --entry-pattern must be one of argparse-cli/function/custom, got {entry_pattern!r}",
+            f"error: --entry-pattern must be one of argparse-cli/function/custom/hydra, got {entry_pattern!r}",
             file=sys.stderr,
         )
         return 2
@@ -364,8 +365,66 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     entry_main_module = getattr(args, "entry_main_module", None)
     wandb_project = getattr(args, "wandb_project", None)
-    distributed_framework = getattr(args, "distributed_framework", None) or "accelerate"
+    distributed_framework = getattr(args, "distributed_framework", None) or "auto"
     resume_flag_name = getattr(args, "resume_flag_name", None)
+
+    # v0.3.0: metric backend + custom snippet + tb glob + checkpoint glob.
+    metric_backend = getattr(args, "metric_backend", None) or "auto"
+    metric_extract_code = getattr(args, "metric_extract_code", None) or ""
+    # Normalize user-provided snippet: strip common leading whitespace so the
+    # jinja `indent(4, True)` filter produces a canonical 4-space body rather
+    # than double-indenting pre-indented snippets.
+    if metric_extract_code:
+        metric_extract_code = textwrap.dedent(metric_extract_code).rstrip() + "\n"
+    tb_events_glob = getattr(args, "tb_events_glob", None) or "{run_dir}/events.out.tfevents.*"
+    checkpoint_glob = getattr(args, "checkpoint_glob", None)
+
+    # Valid enum for metric_backend.
+    if metric_backend not in {"wandb", "tensorboard", "log", "custom", "auto"}:
+        print(
+            f"error: --metric-backend must be one of wandb/tensorboard/log/custom/auto, got {metric_backend!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Valid enum for distributed_framework (includes `auto` and `lightning`).
+    if distributed_framework not in {
+        "accelerate",
+        "deepspeed",
+        "fsdp",
+        "ddp",
+        "lightning",
+        "none",
+        "auto",
+    }:
+        print(
+            f"error: --distributed-framework must be one of accelerate/deepspeed/fsdp/ddp/lightning/none/auto, got {distributed_framework!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Auto-resolve metric_backend against the host project if requested.
+    project_root = Path.cwd().resolve()
+    metric_backend_auto_resolved = False
+    if metric_backend == "auto":
+        resolved = metric_reader.detect_backend(project_root)
+        metric_backend = resolved
+        metric_backend_auto_resolved = True
+
+    # Auto-resolve distributed_framework likewise.
+    distributed_framework_auto_resolved = False
+    if distributed_framework == "auto":
+        resolved = metric_reader.detect_distributed_framework(
+            project_root, entry_main_module=entry_main_module
+        )
+        distributed_framework = resolved
+        distributed_framework_auto_resolved = True
+
+    # Custom-backend sanity: if we auto-detected `custom` (MLflow), leave the
+    # snippet empty so prepare.py renders a TODO raising NotImplementedError.
+    # The user has to regenerate with --metric-extract-code once they write
+    # their own extraction logic.
+    custom_is_todo = (metric_backend == "custom" and not metric_extract_code)
 
     # Serialize CLI overrides as a Python-literal dict for direct paste into
     # train_wrapper.py.jinja. `pprint.pformat` preserves Python syntax for
@@ -399,7 +458,15 @@ def cmd_init(args: argparse.Namespace) -> int:
         "cli_args_dict": cli_args_dict,
         "wandb_project": wandb_project,
         "distributed_framework": distributed_framework,
+        "distributed_framework_auto_resolved": distributed_framework_auto_resolved,
         "resume_flag_name": resume_flag_name,
+        # v0.3.0 additions.
+        "metric_backend": metric_backend,
+        "metric_backend_auto_resolved": metric_backend_auto_resolved,
+        "metric_extract_code": metric_extract_code,
+        "tb_events_glob": tb_events_glob,
+        "checkpoint_glob": checkpoint_glob,
+        "custom_is_todo": custom_is_todo,
     }
 
     _render(env, "program.md.jinja", ctx, expr_dir / "program.md")
@@ -409,6 +476,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     # P2: select train.py template by entry_pattern.
     #   - argparse-cli -> wrapper mode (runpy.run_module on host entry)
+    #   - hydra        -> Hydra-override wrapper mode (dotted overrides)
     #   - function|custom -> legacy function-mode template
     # See program.md "Entry point" section for the recorded choice.
     if entry_pattern == "argparse-cli":
@@ -419,6 +487,14 @@ def cmd_init(args: argparse.Namespace) -> int:
             )
             return 2
         _render(env, "train_wrapper.py.jinja", ctx, expr_dir / "train.py")
+    elif entry_pattern == "hydra":
+        if not entry_main_module:
+            print(
+                "error: --entry-main-module is required when --entry-pattern=hydra",
+                file=sys.stderr,
+            )
+            return 2
+        _render(env, "train_hydra.py.jinja", ctx, expr_dir / "train.py")
     else:
         _render(env, "train.py.jinja", ctx, expr_dir / "train.py")
 
@@ -621,28 +697,22 @@ def cmd_run(args: argparse.Namespace) -> int:
         status, verdict = "crash", "crash"
     else:
         # launch.status == "ok"; proceed with metric extraction.
-        summary = wandb_reader.read_via_pointer(run_dir)
-        pointer = wandb_reader.read_pointer(run_dir)
+        # v0.3.0: dispatch by session.metric_backend. For wandb we keep the
+        # pointer->summary path; other backends skip wandb reads entirely.
+        backend = getattr(session, "metric_backend", None) or "wandb"
+        metrics_obj = _dispatch_extract_metrics(
+            backend=backend,
+            prepare_mod=prepare_mod,
+            run_dir=run_dir,
+            log_path=log_path,
+        )
+
+        # wandb_run_id is surfaced on RunResult for ops convenience; always
+        # probe the pointer file regardless of backend (wandb may be present
+        # alongside tensorboard, for instance).
+        pointer = metric_reader.read_pointer(run_dir)
         if pointer:
             wandb_run_id = pointer.get("wandb_run_id")
-
-        metrics_obj = None
-        if summary is not None:
-            try:
-                metrics_obj = prepare_mod.extract_metrics(summary)
-            except Exception as e:
-                print(f"extract_metrics failed: {e}", file=sys.stderr)
-                metrics_obj = None
-
-        if metrics_obj is None:
-            # log fallback
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log_text = f.read()
-                metrics_obj = prepare_mod.extract_metrics_from_log(log_text)
-            except Exception as e:
-                print(f"extract_metrics_from_log failed: {e}", file=sys.stderr)
-                metrics_obj = None
 
         if metrics_obj is None:
             status, verdict = "invalid", "revert"
@@ -833,6 +903,82 @@ def _write_and_exit_invalid(
     )
     dump_json(result_path, asdict(result))
     _print_run_oneliner(result, file=sys.stderr)
+
+
+def _dispatch_extract_metrics(
+    *,
+    backend: str,
+    prepare_mod,
+    run_dir: Path,
+    log_path: Path,
+) -> Any:
+    """v0.3.0 metric-backend dispatch. Returns the prepare module's metric
+    object (dict / Metrics) or None on total failure.
+
+    The dispatch mirrors the contract documented in prepare.py.jinja: each
+    backend calls either `extract_metrics(summary)` (wandb / tensorboard) or
+    `extract_metrics_from_log(log_text)` (log) or the full triple-arg
+    `extract_metrics(run_dir=, run_log_text=, host_stdout_tail=)` (custom).
+    """
+    log_text = ""
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            log_text = f.read()
+    except OSError:
+        log_text = ""
+
+    def _try_log_fallback():
+        try:
+            return prepare_mod.extract_metrics_from_log(log_text)
+        except Exception as e:  # noqa: BLE001
+            print(f"extract_metrics_from_log failed: {e}", file=sys.stderr)
+            return None
+
+    if backend == "log":
+        return _try_log_fallback()
+
+    if backend == "tensorboard":
+        tb_events_glob = os.environ.get("AR_TB_EVENTS_GLOB")  # optional override
+        tb_data = metric_reader.read_tensorboard(run_dir, events_glob=tb_events_glob)
+        if tb_data is None:
+            # tb read failed — fall through to log-scan so a malformed events
+            # file doesn't poison the whole run if the metric was also printed.
+            return _try_log_fallback()
+        try:
+            return prepare_mod.extract_metrics(tb_data)
+        except Exception as e:  # noqa: BLE001
+            print(f"extract_metrics (tensorboard) failed: {e}", file=sys.stderr)
+            return _try_log_fallback()
+
+    if backend == "custom":
+        # Custom snippet signature: extract_metrics(run_dir, run_log_text, host_stdout_tail).
+        host_stdout_tail = metric_reader.tail_file(log_path, max_bytes=64 * 1024)
+        try:
+            return prepare_mod.extract_metrics(
+                run_dir=run_dir,
+                run_log_text=log_text,
+                host_stdout_tail=host_stdout_tail,
+            )
+        except TypeError:
+            # Older templates / user overrides with positional-only signature.
+            try:
+                return prepare_mod.extract_metrics(None)
+            except Exception as e:  # noqa: BLE001
+                print(f"extract_metrics (custom fallback) failed: {e}", file=sys.stderr)
+                return _try_log_fallback()
+        except Exception as e:  # noqa: BLE001
+            print(f"extract_metrics (custom) failed: {e}", file=sys.stderr)
+            return _try_log_fallback()
+
+    # Default: wandb. Pointer -> summary -> extract_metrics; fall back to log.
+    summary = metric_reader.read_via_pointer(run_dir)
+    if summary is not None:
+        try:
+            return prepare_mod.extract_metrics(summary)
+        except Exception as e:  # noqa: BLE001
+            print(f"extract_metrics (wandb) failed: {e}", file=sys.stderr)
+            # fall through to log fallback
+    return _try_log_fallback()
 
 
 def _metrics_to_dict(obj: Any) -> dict[str, float]:
@@ -1258,6 +1404,10 @@ def cmd_chain_init(args: argparse.Namespace) -> int:
         wandb_project=getattr(args, "wandb_project", None),
         distributed_framework=getattr(args, "distributed_framework", None),
         resume_flag_name=getattr(args, "resume_flag_name", None),
+        metric_backend=getattr(args, "metric_backend", None),
+        tb_events_glob=getattr(args, "tb_events_glob", None),
+        metric_extract_code=getattr(args, "metric_extract_code", None),
+        checkpoint_glob=getattr(args, "checkpoint_glob", None),
     )
     rc = cmd_init(init_args)
     if rc != 0:
@@ -1279,6 +1429,8 @@ def cmd_chain_init(args: argparse.Namespace) -> int:
         created_at=_iso_now(),
         baseline_acknowledged=True,
         resume_mode="continue",
+        metric_backend=getattr(parent_session, "metric_backend", None) or "wandb",
+        distributed_framework=getattr(parent_session, "distributed_framework", None) or "accelerate",
     )
     dump_json(child_dir / ".ar-session.json", asdict(child_session))
 
@@ -1422,13 +1574,15 @@ def build_parser() -> argparse.ArgumentParser:
     # function-mode behavior) so existing callers / chain-init keep working.
     pi.add_argument(
         "--entry-pattern",
-        choices=["argparse-cli", "function", "custom"],
+        choices=["argparse-cli", "function", "custom", "hydra"],
         default=None,
         help=(
             "shape of the host's training entrypoint. 'argparse-cli' renders "
-            "train_wrapper.py.jinja which runpy-invokes --entry-main-module; "
-            "'function' / 'custom' render the legacy train.py.jinja which "
-            "expects an importable main(**kwargs)."
+            "train_wrapper.py.jinja which runpy-invokes --entry-main-module with "
+            "argparse-style flags; 'hydra' renders train_hydra.py.jinja which "
+            "emits Hydra dotted overrides (foo.bar=baz) and respects +foo.bar / "
+            "~foo.bar raw directives; 'function' / 'custom' render the legacy "
+            "train.py.jinja which expects an importable main(**kwargs)."
         ),
     )
     pi.add_argument(
@@ -1453,9 +1607,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="wandb project name; recorded in program.md Entry point section.")
     pi.add_argument(
         "--distributed-framework",
-        choices=["accelerate", "deepspeed", "fsdp", "ddp", "none"],
+        choices=["accelerate", "deepspeed", "fsdp", "ddp", "lightning", "none", "auto"],
         default=None,
-        help="distributed framework in use; default 'accelerate'.",
+        help=(
+            "distributed framework semantics in use; default 'auto' (probes "
+            "pyproject.toml deps + entry-script head imports). The resolved "
+            "value is recorded in program.md."
+        ),
     )
     pi.add_argument(
         "--resume-flag-name",
@@ -1464,6 +1622,50 @@ def build_parser() -> argparse.ArgumentParser:
             "argparse flag the host accepts to resume from a checkpoint path "
             "(e.g. 'resume_from_checkpoint'). When set AND a parent ckpt is "
             "available, the wrapper injects the resolved path into CLI_OVERRIDES."
+        ),
+    )
+    # v0.3.0: metric backend + checkpoint glob flags.
+    pi.add_argument(
+        "--metric-backend",
+        choices=["wandb", "tensorboard", "log", "custom", "auto"],
+        default=None,
+        help=(
+            "how to extract metrics after each run. 'wandb' reads via "
+            "wandb_pointer.json -> wandb-summary.json (v0.2 behavior); "
+            "'tensorboard' reads events files via tbparse or EventAccumulator; "
+            "'log' regex-scans run.log; 'custom' pastes --metric-extract-code "
+            "verbatim into prepare.extract_metrics; 'auto' (default) probes "
+            "the host project."
+        ),
+    )
+    pi.add_argument(
+        "--tb-events-glob",
+        default=None,
+        help=(
+            "tensorboard events file glob for --metric-backend=tensorboard. "
+            "Default `{run_dir}/events.out.tfevents.*`; `{run_dir}` is filled "
+            "at read time from $AR_RUN_DIR."
+        ),
+    )
+    pi.add_argument(
+        "--metric-extract-code",
+        default=None,
+        help=(
+            "Python snippet pasted verbatim into prepare.extract_metrics() "
+            "when --metric-backend=custom. The snippet receives "
+            "`run_dir: Path, run_log_text: str, host_stdout_tail: str` in that "
+            "order and must assign `out: dict[str, float]`."
+        ),
+    )
+    pi.add_argument(
+        "--checkpoint-glob",
+        default=None,
+        help=(
+            "pathlib-style glob for checkpoint discovery, evaluated from the "
+            "project root at run time. Newest-mtime match wins and takes "
+            "priority over the built-in AR-SAVE candidates. Examples: "
+            "'lightning_logs/*/checkpoints/*.ckpt' (Lightning), "
+            "'checkpoints/*.pt' (plain torch)."
         ),
     )
     pi.set_defaults(func=cmd_init)
@@ -1519,7 +1721,7 @@ def build_parser() -> argparse.ArgumentParser:
     # so the child materializes with the same entry-point contract.
     pc.add_argument(
         "--entry-pattern",
-        choices=["argparse-cli", "function", "custom"],
+        choices=["argparse-cli", "function", "custom", "hydra"],
         default=None,
     )
     pc.add_argument("--entry-main-module", default=None)
@@ -1527,10 +1729,19 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--wandb-project", default=None)
     pc.add_argument(
         "--distributed-framework",
-        choices=["accelerate", "deepspeed", "fsdp", "ddp", "none"],
+        choices=["accelerate", "deepspeed", "fsdp", "ddp", "lightning", "none", "auto"],
         default=None,
     )
     pc.add_argument("--resume-flag-name", default=None)
+    # v0.3.0 forwarding.
+    pc.add_argument(
+        "--metric-backend",
+        choices=["wandb", "tensorboard", "log", "custom", "auto"],
+        default=None,
+    )
+    pc.add_argument("--tb-events-glob", default=None)
+    pc.add_argument("--metric-extract-code", default=None)
+    pc.add_argument("--checkpoint-glob", default=None)
     pc.set_defaults(func=cmd_chain_init)
 
     return p
