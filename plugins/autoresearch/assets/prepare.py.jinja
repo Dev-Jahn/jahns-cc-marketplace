@@ -23,9 +23,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+{% if entry_pattern != "argparse-cli" %}
 # ------------------------- project imports -------------------------------
 # Thin-wrapper mode: delegate to the host project's existing dataloaders.
 # The jinja variable `loader_module` is set by `ar init`.
+#
+# Only rendered for `entry_pattern in {function, custom}`. In argparse-cli
+# (wrapper) mode, the host training script builds its own loaders via its
+# CLI — prepare.py is a metric/resume contract only, so we omit the loader
+# imports entirely to avoid coupling to host-specific loader names.
 try:
     from {{ loader_module }} import (  # noqa: F401 - re-exported via wrappers below
         build_train_loader as _project_build_train_loader,
@@ -37,6 +43,7 @@ except ImportError as e:
         "`{{ loader_module }}`. Adjust the import above (this file is "
         "generated once; regenerate via `/autoresearch:setup` if needed)."
     ) from e
+{% endif %}
 
 
 # --------------------------- metric contract -----------------------------
@@ -141,7 +148,11 @@ def resume_ckpt_path() -> Path | None:
     return state if state.is_file() else None
 
 
+{% if entry_pattern != "argparse-cli" %}
 # ------------------------ loader wrappers + self-test --------------------
+# These are only emitted in function/custom mode. In argparse-cli wrapper
+# mode the host script owns its own dataloader lifecycle, so there is
+# nothing to re-export here.
 
 
 def build_train_loader(*args, **kwargs):
@@ -216,3 +227,4 @@ import os  # noqa: E402
 
 if os.environ.get("AR_SKIP_SELF_TEST") != "1":
     _self_test()
+{% endif %}

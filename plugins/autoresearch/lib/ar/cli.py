@@ -365,11 +365,11 @@ def cmd_init(args: argparse.Namespace) -> int:
     resume_flag_name = getattr(args, "resume_flag_name", None)
 
     # Serialize CLI overrides as a Python-literal dict for direct paste into
-    # train_wrapper.py.jinja. Using json.dumps gives a valid Python dict
-    # literal for string/number/bool/null values — matches the spec's
-    # "CLI_OVERRIDES = {{ cli_args_json | safe }}" rendering contract.
-    import json as _json
-    cli_args_literal = _json.dumps(cli_args_dict, indent=4, sort_keys=True)
+    # train_wrapper.py.jinja. `pprint.pformat` preserves Python syntax for
+    # True/False/None (unlike json.dumps which emits true/false/null and
+    # breaks at import time).
+    import pprint as _pprint
+    cli_args_literal = _pprint.pformat(cli_args_dict, indent=4, sort_dicts=True, width=80)
 
     ctx = {
         "expr_slug": args.expr,
