@@ -10,7 +10,11 @@
       "name": "autoresearch",
       "description": "Autonomous LLM-research loop adapted from Karpathy's autoresearch for real ML codebases (editable-install Python projects, accelerate / torchrun launchers, wandb metrics). Two skills — setup and run — plus an ar helper CLI that owns launch orchestration, wandb binding, atomic checkpoint commit, process-tree-aware timeout, and chain-mode transitions, so the main Claude session stays context-light across hundreds–thousands of iterations.",
       "category": "development",
-      "source": "./plugins/autoresearch",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/autoresearch-plugin.git",
+        "sha": "c2abbc2041116db7779cc4914ea6915820d9dbee"
+      },
       "homepage": "https://github.com/Dev-Jahn/jahns-cc-marketplace/tree/main/plugins/autoresearch",
       "keywords": [
         "research",
@@ -21,7 +25,8 @@
         "autoresearch",
         "karpathy",
         "wandb"
-      ]
+      ],
+      "version": "0.3.0"
     }
   ]
 }
