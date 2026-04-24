@@ -183,14 +183,17 @@ def _import_prepare(expr_dir: Path):
 
 
 def _verify_prepare_contract(prepare_mod) -> None:
+    # Required on every expr regardless of entry_pattern — this is the
+    # metric/resume contract ar itself needs.
     required = [
-        "build_train_loader",
-        "build_val_loader",
         "primary_spec",
         "extract_metrics",
         "extract_metrics_from_log",
         "resume_ckpt_path",
     ]
+    # build_train_loader / build_val_loader are only required in function /
+    # custom mode. In argparse-cli wrapper mode the host script builds its own
+    # loaders via its CLI, so prepare.py doesn't need to expose them.
     missing = [n for n in required if not hasattr(prepare_mod, n)]
     if missing:
         raise RuntimeError(

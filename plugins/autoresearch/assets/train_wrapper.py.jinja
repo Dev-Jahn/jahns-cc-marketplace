@@ -164,11 +164,29 @@ if not _ENTRY_MAIN_MODULE:
 _argv = _render_cli_argv(CLI_OVERRIDES)
 # sys.argv[0] mirrors how `python -m <module>` exposes the module path.
 sys.argv = [_ENTRY_MAIN_MODULE, *_argv]
-print(f"[AR-WRAPPER] runpy {_ENTRY_MAIN_MODULE} argv={_argv}", file=sys.stderr)
+
+# Invocation strategy — two-step with fallback:
+#   1. Preferred: `from <module> import main; main()`. This preserves the
+#      module's own __name__ (not "__main__"), which is critical for HF
+#      Trainer's HfArgumentParser + `from __future__ import annotations`
+#      codebases where get_type_hints() evaluates dataclass field types
+#      against the defining module's globals. runpy.run_module rebinds the
+#      namespace to "__main__" and breaks that resolution.
+#   2. Fallback: runpy.run_module(..., run_name="__main__"). Needed for
+#      scripts whose entry point is top-level code (no `def main()`).
+import importlib  # noqa: E402
 
 _host_exit_code = 0
 try:
-    runpy.run_module(_ENTRY_MAIN_MODULE, run_name="__main__")
+    _mod = importlib.import_module(_ENTRY_MAIN_MODULE)
+    _main_fn = getattr(_mod, "main", None)
+    if callable(_main_fn):
+        print(f"[AR-WRAPPER] calling {_ENTRY_MAIN_MODULE}.main() argv={_argv}", file=sys.stderr)
+        _main_fn()
+    else:
+        # No top-level main() — fall back to runpy (matches `python -m <module>` semantics).
+        print(f"[AR-WRAPPER] runpy {_ENTRY_MAIN_MODULE} argv={_argv}", file=sys.stderr)
+        runpy.run_module(_ENTRY_MAIN_MODULE, run_name="__main__")
 except SystemExit as _se:
     # Host scripts often call sys.exit(0) at the end. Re-raise only on failure.
     _code = _se.code
