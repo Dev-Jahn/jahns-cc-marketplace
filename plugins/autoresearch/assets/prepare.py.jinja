@@ -208,5 +208,11 @@ def _batch_signature(batch: Any) -> dict[str, Any]:
 
 
 # Run the self-test at import time so any contract violation surfaces before
-# `ar run` spawns a subprocess.
-_self_test()
+# `ar run` spawns a subprocess. Set AR_SKIP_SELF_TEST=1 in the environment to
+# bypass — useful when the project's dataloader is expensive to instantiate
+# (e.g. downloads / decodes / joins shards on first call) and the batch
+# contract has already been cached in batch_contract.json.
+import os  # noqa: E402
+
+if os.environ.get("AR_SKIP_SELF_TEST") != "1":
+    _self_test()
