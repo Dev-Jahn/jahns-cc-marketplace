@@ -1,0 +1,73 @@
+# {{ expr_slug }}
+
+## Goal
+
+{{ goal }}
+
+## Mutation scope
+
+Agent may monkey-patch / override the following (advisory — enforced by SKILL.md prose, not by `ar`):
+
+{% if mutation_scope %}
+{% for item in mutation_scope %}
+- `{{ item }}`
+{% endfor %}
+{% else %}
+- (none declared)
+{% endif %}
+
+## Out of scope
+
+The following are **read-only** for the agent:
+
+- `prepare.py` (contract — edited only by `/autoresearch:setup`).
+- Everything under the host project outside `.autoresearch/{{ expr_slug }}/`.
+- `results.tsv`, `best.json`, `best_ckpt/`, `runs/` (managed by `ar`).
+
+## Metric
+
+- **Primary:** `{{ primary_name }}` (direction: `{{ primary_direction }}`).
+{% if auxiliary %}
+- **Auxiliary (logged, not decisive):**
+{% for k in auxiliary %}
+  - `{{ k }}`
+{% endfor %}
+{% endif %}
+{% if hard_constraints %}
+- **Hard constraints (violation => run invalid, verdict=revert):**
+{% for c in hard_constraints %}
+  - `{{ c.name }} {{ c.op }} {{ c.threshold }}`
+{% endfor %}
+{% else %}
+- **Hard constraints:** none.
+{% endif %}
+
+## Runner
+
+- Kind: `{{ runner.kind }}`
+{% if runner.config_file %}
+- Config file: `{{ runner.config_file }}`
+{% endif %}
+{% if runner.num_processes %}
+- num_processes: `{{ runner.num_processes }}`
+{% endif %}
+{% if runner.extra_args %}
+- Extra args: `{{ runner.extra_args | join(' ') }}`
+{% endif %}
+
+## Per-run time budget
+
+- Default seconds per run: `{{ per_run_seconds }}` (overridable via `ar run --seconds N`).
+
+{% if parent_expr %}
+## Parent lineage
+
+- `parent_expr`: `{{ parent_expr }}`
+- `parent_ckpt`: `{{ parent_ckpt }}`
+
+The frozen AR-RESUME block in `train.py` calls `prepare.resume_ckpt_path()`, which reads the value above. If present and valid, training resumes from that checkpoint.
+{% endif %}
+
+## How to iterate
+
+Invoke `/autoresearch:run {{ expr_slug }}` to start (or continue) the experiment loop. The agent edits only `train.py`; everything else is managed by `ar`.

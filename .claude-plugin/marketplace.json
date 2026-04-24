@@ -1,0 +1,27 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "jahns-cc-marketplace",
+  "description": "Personal Claude Code plugin marketplace (Dev-Jahn).",
+  "owner": {
+    "name": "Dev-Jahn"
+  },
+  "plugins": [
+    {
+      "name": "autoresearch",
+      "description": "Autonomous LLM-research loop adapted from Karpathy's autoresearch for real ML codebases (editable-install Python projects, accelerate / torchrun launchers, wandb metrics). Two skills — setup and run — plus an ar helper CLI that owns launch orchestration, wandb binding, atomic checkpoint commit, process-tree-aware timeout, and chain-mode transitions, so the main Claude session stays context-light across hundreds–thousands of iterations.",
+      "category": "development",
+      "source": "./plugins/autoresearch",
+      "homepage": "https://github.com/Dev-Jahn/jahns-cc-marketplace/tree/main/plugins/autoresearch",
+      "keywords": [
+        "research",
+        "autonomous",
+        "training",
+        "ml",
+        "llm",
+        "autoresearch",
+        "karpathy",
+        "wandb"
+      ]
+    }
+  ]
+}

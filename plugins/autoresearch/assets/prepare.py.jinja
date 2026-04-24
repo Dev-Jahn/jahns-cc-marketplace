@@ -1,0 +1,212 @@
+"""prepare.py — thin-wrapper mode for `{{ expr_slug }}`.
+
+Generated once by `/autoresearch:setup`. READ-ONLY thereafter. The only edits
+you ever make for this experiment happen in `train.py`.
+
+Contract (see `ar` CLI §prepare.py responsibilities):
+  - `build_train_loader()` / `build_val_loader()` — re-expose the host
+    project's existing dataloaders.
+  - `primary_spec` — {name, direction}.
+  - `aux_keys`, `hard_constraints` — constants used by `ar`.
+  - `extract_metrics(wandb_summary)` — project-specific key extraction.
+  - `extract_metrics_from_log(log_text)` — log-scan fallback.
+  - `resume_ckpt_path()` — reads program.md's `parent_ckpt` declaration.
+  - 1-batch self-test at import time; caches batch signature to
+    `batch_contract.json` and enforces it on subsequent runs.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+# ------------------------- project imports -------------------------------
+# Thin-wrapper mode: delegate to the host project's existing dataloaders.
+# The jinja variable `loader_module` is set by `ar init`.
+try:
+    from {{ loader_module }} import (  # noqa: F401 - re-exported via wrappers below
+        build_train_loader as _project_build_train_loader,
+        build_val_loader as _project_build_val_loader,
+    )
+except ImportError as e:
+    raise ImportError(
+        "prepare.py could not import the host project's loaders from "
+        "`{{ loader_module }}`. Adjust the import above (this file is "
+        "generated once; regenerate via `/autoresearch:setup` if needed)."
+    ) from e
+
+
+# --------------------------- metric contract -----------------------------
+
+primary_spec: dict[str, str] = {
+    "name": "{{ primary_name }}",
+    "direction": "{{ primary_direction }}",
+}
+
+aux_keys: list[str] = [
+{% for k in auxiliary %}
+    "{{ k }}",
+{% endfor %}
+]
+
+hard_constraints: list[dict[str, Any]] = [
+{% for c in hard_constraints %}
+    {"name": "{{ c.name }}", "op": "{{ c.op }}", "threshold": {{ c.threshold }}},
+{% endfor %}
+]
+
+
+def extract_metrics(wandb_summary: dict) -> dict[str, float]:
+    """Pull primary + auxiliary metrics out of wandb-summary.json."""
+    out: dict[str, float] = {}
+    wanted = [primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)]
+    for key in wanted:
+        val = _get_nested(wandb_summary, key)
+        if val is None:
+            continue
+        try:
+            out[key] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _get_nested(obj: Any, dotted: str) -> Any:
+    """Resolve a dotted key with slash-or-dot separators against a nested dict."""
+    if obj is None:
+        return None
+    if dotted in obj and not isinstance(obj.get(dotted), dict):
+        return obj[dotted]
+    # try dotted splits
+    for sep in ("/", "."):
+        parts = dotted.split(sep)
+        cur: Any = obj
+        ok = True
+        for p in parts:
+            if isinstance(cur, dict) and p in cur:
+                cur = cur[p]
+            else:
+                ok = False
+                break
+        if ok:
+            return cur
+    return None
+
+
+_LOG_LINE_RE = re.compile(
+    r"^\s*([A-Za-z0-9_./-]+)\s*=\s*([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*$",
+    re.MULTILINE,
+)
+
+
+def extract_metrics_from_log(log_text: str) -> dict[str, float]:
+    """Scan `run.log` for `^key=<number>$` lines. Last-seen per key wins."""
+    wanted = {primary_spec["name"], *aux_keys, *(c["name"] for c in hard_constraints)}
+    found: dict[str, float] = {}
+    for m in _LOG_LINE_RE.finditer(log_text):
+        k, v = m.group(1), m.group(2)
+        if k in wanted:
+            try:
+                found[k] = float(v)
+            except ValueError:
+                continue
+    return found
+
+
+# --------------------------- resume pointer ------------------------------
+
+
+def resume_ckpt_path() -> Path | None:
+    """Read program.md for parent_ckpt declaration, return resolved path."""
+    expr_dir = Path(__file__).resolve().parent
+    prog = expr_dir / "program.md"
+    if not prog.is_file():
+        return None
+    try:
+        text = prog.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    # Match the bullet `- \`parent_ckpt\`: \`<path>\`` from program.md.jinja.
+    m = re.search(r"`parent_ckpt`\s*:\s*`([^`]+)`", text)
+    if not m:
+        return None
+    p = Path(m.group(1)).expanduser()
+    if not p.is_absolute():
+        p = (expr_dir / p).resolve()
+    # parent_ckpt is the best_ckpt dir; state.pt lives inside it.
+    state = p / "state.pt" if p.is_dir() else p
+    return state if state.is_file() else None
+
+
+# ------------------------ loader wrappers + self-test --------------------
+
+
+def build_train_loader(*args, **kwargs):
+    return _project_build_train_loader(*args, **kwargs)
+
+
+def build_val_loader(*args, **kwargs):
+    return _project_build_val_loader(*args, **kwargs)
+
+
+def _self_test() -> None:
+    """One-batch smoke test; cache a signature and enforce on subsequent imports."""
+    expr_dir = Path(__file__).resolve().parent
+    contract_path = expr_dir / "batch_contract.json"
+    try:
+        loader = _project_build_train_loader()
+        it = iter(loader)
+        batch = next(it)
+    except StopIteration:
+        raise RuntimeError("prepare.py self-test: train loader is empty")
+    except Exception as e:  # includes dataset path errors
+        raise RuntimeError(f"prepare.py self-test: loader construction failed: {e}") from e
+
+    signature = _batch_signature(batch)
+    if contract_path.is_file():
+        try:
+            cached = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cached = None
+        if cached is not None and cached != signature:
+            # Non-fatal: warn on stderr; batch contract mismatch likely means
+            # the project's loader shape changed. Operator should rerun setup.
+            print(
+                f"[prepare.py] WARN: batch contract mismatch. cached={cached!r} "
+                f"current={signature!r}",
+                file=sys.stderr,
+            )
+    else:
+        try:
+            contract_path.write_text(json.dumps(signature, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+
+def _batch_signature(batch: Any) -> dict[str, Any]:
+    """Return a dict-of-{key: {dtype, shape}} signature for a batch."""
+    sig: dict[str, Any] = {}
+    if isinstance(batch, dict):
+        items = batch.items()
+    elif isinstance(batch, (tuple, list)):
+        items = [(f"[{i}]", v) for i, v in enumerate(batch)]
+    else:
+        return {"kind": type(batch).__name__}
+    for k, v in items:
+        entry: dict[str, Any] = {"type": type(v).__name__}
+        shape = getattr(v, "shape", None)
+        if shape is not None:
+            entry["shape"] = list(shape)
+        dtype = getattr(v, "dtype", None)
+        if dtype is not None:
+            entry["dtype"] = str(dtype)
+        sig[str(k)] = entry
+    return sig
+
+
+# Run the self-test at import time so any contract violation surfaces before
+# `ar run` spawns a subprocess.
+_self_test()

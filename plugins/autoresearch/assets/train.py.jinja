@@ -1,0 +1,165 @@
+"""train.py — the ONLY file the agent edits for `{{ expr_slug }}`.
+
+Mutation scope (advisory; do not write outside this file):
+{% for item in mutation_scope %}
+  - {{ item }}
+{% endfor %}
+
+The frozen AR-RESUME and AR-SAVE blocks at the top and bottom are managed by
+`ar`. Everything between them is agent-editable.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import traceback
+from pathlib import Path
+
+# `ar run` exports these two for downstream introspection.
+AR_RUN_ID = os.environ.get("AR_RUN_ID", "r0000")
+AR_EXPR_DIR = Path(os.environ.get("AR_EXPR_DIR", str(Path(__file__).resolve().parent)))
+
+# ======================================================================
+# PARAMETER BLOCK — edit freely per run.
+# ======================================================================
+
+RUN_NOTE = ""  # one-line rationale; surfaced in results.tsv
+
+LEARNING_RATE = {{ initial_params.get('LEARNING_RATE', 3e-4) }}
+BATCH_SIZE = {{ initial_params.get('BATCH_SIZE', 32) }}
+
+# Agent-editable extras (add / remove as needed):
+{% for k, v in initial_params.items() if k not in ['LEARNING_RATE', 'BATCH_SIZE'] %}
+{{ k }} = {{ v | tojson if v is not string else '"' ~ v ~ '"' }}
+{% endfor %}
+
+# ======================================================================
+# MONKEY-PATCH SANDBOX — apply targeted overrides to host-project modules.
+# The subprocess is fresh each run (spawned via `uv run`), so patches can
+# never leak into `ar`'s own bookkeeping.
+# ======================================================================
+
+# Example:
+#   import {{ training_entrypoint.split('.')[0] if '.' in training_entrypoint else training_entrypoint }}
+#   original_forward = SomeModule.forward
+#   def patched_forward(self, x): ...
+#   SomeModule.forward = patched_forward
+
+# ======================================================================
+# === AR-RESUME (do not edit; ar manages this) =========================
+# Resumes from a parent ckpt if program.md declares parent_ckpt; otherwise
+# training starts from scratch.
+import prepare  # noqa: E402
+
+_AR_RESUME_PATH = prepare.resume_ckpt_path()
+_AR_RESUME_STATE = None
+if _AR_RESUME_PATH is not None and _AR_RESUME_PATH.is_file():
+    try:
+        import torch  # noqa: F401 — lives in user venv, not in ar's deps
+
+        _AR_RESUME_STATE = torch.load(_AR_RESUME_PATH, map_location="cpu")
+        print(f"[AR-RESUME] loaded state from {_AR_RESUME_PATH}", file=sys.stderr)
+    except Exception as _e:
+        print(f"[AR-RESUME] failed to load {_AR_RESUME_PATH}: {_e}", file=sys.stderr)
+        _AR_RESUME_STATE = None
+# === END AR-RESUME ====================================================
+# ======================================================================
+
+# ======================================================================
+# BODY — invoke the host project's training entrypoint with the
+# parameters above. Edit as needed.
+# ======================================================================
+
+train_loader = prepare.build_train_loader()
+val_loader = prepare.build_val_loader()
+
+# TODO (agent-editable): call the project's real training entrypoint.
+# The template ships a best-effort default invocation; adjust imports and
+# kwargs to match your project's signature.
+#
+# Example:
+#     from {{ training_entrypoint.rsplit('.', 1)[0] if '.' in training_entrypoint else training_entrypoint }} import {{ training_entrypoint.rsplit('.', 1)[1] if '.' in training_entrypoint else 'main' }}
+#     result = {{ training_entrypoint.rsplit('.', 1)[1] if '.' in training_entrypoint else 'main' }}(
+#         train_loader=train_loader,
+#         val_loader=val_loader,
+#         learning_rate=LEARNING_RATE,
+#         batch_size=BATCH_SIZE,
+#         resume_state=_AR_RESUME_STATE,
+#     )
+#
+# Populate `_model` and `_optimizer` below so the AR-SAVE block can persist
+# them. If your entrypoint returns (model, optimizer, metrics), bind them
+# directly.
+_model = None
+_optimizer = None
+
+# ======================================================================
+# === AR-SAVE (do not edit; ar manages this) ===========================
+# Writes wandb_pointer.json BEFORE the final metric log so `ar run` can bind
+# to the correct wandb run under DDP, then dumps state.pt. A failure here
+# materializes `.ar-save-failed` which forces `verdict=revert` upstream.
+_AR_RUN_DIR = AR_EXPR_DIR / "runs" / AR_RUN_ID
+_AR_RUN_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    try:
+        import wandb  # user venv dep
+
+        _run = getattr(wandb, "run", None)
+        if _run is not None:
+            _pointer = {
+                "wandb_run_id": _run.id,
+                "wandb_run_dir": str(Path(_run.dir).parent),
+            }
+            _pointer_path = _AR_RUN_DIR / "wandb_pointer.json"
+            with open(_pointer_path, "w", encoding="utf-8") as _f:
+                json.dump(_pointer, _f, indent=2)
+    except ImportError:
+        pass  # wandb optional
+    except Exception as _e:
+        print(f"[AR-SAVE] wandb pointer write failed: {_e}", file=sys.stderr)
+
+    # Persist model + optimizer state. If the user's training code didn't
+    # populate _model/_optimizer, we still write a stub state.pt so
+    # downstream `state.pt must exist` checks have something to look at,
+    # but we also touch `.ar-save-failed` so the candidate is rejected.
+    try:
+        import torch  # user venv dep
+
+        _state = {}
+        if _model is not None and hasattr(_model, "state_dict"):
+            _state["model"] = _model.state_dict()
+        if _optimizer is not None and hasattr(_optimizer, "state_dict"):
+            _state["optimizer"] = _optimizer.state_dict()
+        _save_path = _AR_RUN_DIR / "state.pt"
+        torch.save(_state, _save_path)
+        if not _state:
+            # Empty state means the body never bound model/optimizer.
+            (_AR_RUN_DIR / ".ar-save-failed").write_text(
+                "empty state dict: train.py did not bind _model / _optimizer\n",
+                encoding="utf-8",
+            )
+    except ImportError:
+        # No torch in env — write a placeholder so `ar` recognizes the attempt.
+        (_AR_RUN_DIR / "state.pt").write_bytes(b"")
+        (_AR_RUN_DIR / ".ar-save-failed").write_text(
+            "torch not importable in user venv\n", encoding="utf-8"
+        )
+    except Exception as _e:
+        (_AR_RUN_DIR / ".ar-save-failed").write_text(
+            f"torch.save failed: {_e}\n{traceback.format_exc()}", encoding="utf-8"
+        )
+except Exception as _outer_e:
+    # Outer guard: no save-path exception should prevent the subprocess from
+    # exiting cleanly — `ar` decides the verdict based on state.pt presence
+    # + .ar-save-failed sentinel.
+    try:
+        (_AR_RUN_DIR / ".ar-save-failed").write_text(
+            f"AR-SAVE outer exception: {_outer_e}\n{traceback.format_exc()}",
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+# === END AR-SAVE ======================================================
+# ======================================================================
