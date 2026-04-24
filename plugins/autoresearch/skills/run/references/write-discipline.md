@@ -34,7 +34,7 @@ Everything in the host project is read-only from the loop's perspective:
 | Path | Permission | Rationale |
 |---|---|---|
 | `pyproject.toml`, `uv.lock`, `.venv/` | Read-only | Changing dependencies invalidates comparability; `uv sync` would perturb cache and potentially trip the optional sha256 manifest warning. |
-| `model/`, `training/`, `attn/`, `losses/`, etc. | Read-only (read as needed for comprehension) | Target of monkey-patching via train.py's sandbox. Patches live inside train.py, not in these files. |
+| `<your_project>/model/`, `<your_project>/training/`, `<your_project>/attn/`, `<your_project>/losses/`, or whatever layout the host project uses | Read-only (read as needed for comprehension) | Target of monkey-patching via train.py's sandbox. Patches live inside train.py, not in these files. |
 | `CLAUDE.md`, `README.md` | Read-only | Reference only. |
 | `wandb/` | Read-only | Output directory. `ar` reads `wandb-summary.json` via the pointer file; the loop never writes here. |
 | `.git/`, git working tree | Read-only (no git operations) | The experiment loop lives entirely outside git. No commits, resets, branches, or adds during the loop. |

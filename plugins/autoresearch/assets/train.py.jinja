@@ -1,5 +1,15 @@
 """train.py — the ONLY file the agent edits for `{{ expr_slug }}`.
 
+Entry-point mode: **function mode** (entry_pattern={{ entry_pattern or 'custom' }}).
+  - This template assumes the host project exposes an importable `main(**kwargs)`
+    (or equivalent) entrypoint that can be invoked as a Python function call
+    with the parameters declared in the PARAMETER BLOCK below.
+  - If your host project's training script is instead an `if __name__ == "__main__"`
+    argparse-CLI script (common for `accelerate launch path/to/train.py --flag ...`),
+    re-run `/autoresearch:setup` with `entry_pattern=argparse-cli` so the
+    wrapper-mode template (`train_wrapper.py.jinja`) is used instead. Wrapper
+    mode handles sys.argv reconstruction + runpy invocation automatically.
+
 Mutation scope (advisory; do not write outside this file):
 {% for item in mutation_scope %}
   - {{ item }}

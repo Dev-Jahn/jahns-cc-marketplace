@@ -31,11 +31,11 @@ Before composing the rationale or calling `chain-init`, think through:
 
 1. **What axis actually moved the primary metric in the parent?** Scan the report for the parameter whose changes correlate with the biggest metric deltas. E.g., "loss weight λ swept from 0.1 to 1.0; λ=0.3 produced the best val/loss."
 
-2. **What's under-explored?** From program.md's mutation scope, list modules/functions that were declared in-scope but never meaningfully touched. E.g., program.md listed `training.losses.UnifiedLoss`, `model.projector.Projector`, `model.na_gla_block.NAGLABlock` but all 80 runs only varied λ inside `UnifiedLoss`. The other two modules are under-explored.
+2. **What's under-explored?** From program.md's mutation scope, list modules/functions that were declared in-scope but never meaningfully touched. E.g., program.md listed `<your_project>.training.losses.YourLoss`, `<your_project>.model.projector.Projector`, `<your_project>.model.attn.YourBlock` but all 80 runs only varied a single loss coefficient inside the loss class. The other two modules are under-explored.
 
-3. **Is the parent's primary metric the right one for the follow-up?** The child expr may choose a **different** primary metric — e.g. parent optimized val/loss (training-stability focus); child now has a warm projector and should optimize `eval/ucf101_top1` (downstream task focus). This is explicitly allowed.
+3. **Is the parent's primary metric the right one for the follow-up?** The child expr may choose a **different** primary metric — e.g. parent optimized val/loss (training-stability focus); child now has a warm projector and should optimize a downstream task metric (e.g. `eval/top1`). This is explicitly allowed.
 
-4. **Why does this direction follow from the parent's results?** Not "here's another random thing to try" — articulate the causal link. E.g.: "λ=0.3 produced stable temporal attention; with temporal attn warm, projector depth is now the binding constraint on downstream accuracy."
+4. **Why does this direction follow from the parent's results?** Not "here's another random thing to try" — articulate the causal link. E.g.: "λ=0.3 produced stable attention dynamics; with attention warm, projector depth is now the binding constraint on downstream accuracy."
 
 5. **What's the new mutation scope?** Usually narrower than the parent's — focus on the under-explored axes identified above.
 
@@ -50,7 +50,7 @@ Write one paragraph (~4-8 sentences), directly to the point. Structure:
 
 Example:
 
-> Parent expr 260424-loss-ablation established that UnifiedLoss with λ=0.3 produces stable val/loss (0.821, down from 0.92 baseline) across the last 40 runs without exceeding the 45 GB VRAM constraint. With temporal attention now thermally stable, the binding constraint on downstream UCF101 accuracy shifts from training-time loss weighting to projector representational capacity — in the parent, projector.depth was held at 2 while the rest of the stack varied. The child expr will fix the best-λ configuration and vary projector depth ∈ {2, 3, 4} + hidden-dim ∈ {384, 512, 768}, targeting eval/ucf101_top1 (max) as the new primary metric. This direction is the right follow-up because (a) parent's best config is the correct starting point for downstream eval rather than a fresh init, (b) projector is declared in-scope in program.md but was never varied, and (c) UCF101 top-1 is the eventual release metric, so optimizing it directly now that the loss curve is settled is more informative than further loss-weighting sweeps.
+> Parent expr `{parent-slug}` established that the project's loss class with λ=0.3 produces stable val/loss (0.821, down from 0.92 baseline) across the last 40 runs without exceeding the 45 GB VRAM constraint. With the attention block now thermally stable, the binding constraint on downstream task accuracy shifts from training-time loss weighting to projector representational capacity — in the parent, projector.depth was held at 2 while the rest of the stack varied. The child expr will fix the best-λ configuration and vary projector depth ∈ {2, 3, 4} + hidden-dim ∈ {384, 512, 768}, targeting `eval/top1` (max) as the new primary metric. This direction is the right follow-up because (a) parent's best config is the correct starting point for downstream eval rather than a fresh init, (b) projector is declared in-scope in program.md but was never varied, and (c) top-1 on the downstream task is the eventual release metric, so optimizing it directly now that the loss curve is settled is more informative than further loss-weighting sweeps.
 
 This rationale is persisted verbatim to the child's `chain_decision.json` under the `"rationale"` field. Keep it specific and causal — it is the post-hoc audit artifact.
 
@@ -58,14 +58,14 @@ This rationale is persisted verbatim to the child's `chain_decision.json` under 
 
 ```bash
 uv run python .autoresearch/ar.py chain-init \
-  --from-expr 260424-loss-ablation \
-  --new-slug 260425-projector-depth \
-  --parent-ckpt .autoresearch/260424-loss-ablation/best_ckpt \
-  --goal "Explore projector depth and hidden dim now that temporal attention is warm; target downstream UCF101 top-1." \
-  --mutation-scope "model.projector.Projector,training.losses.UnifiedLoss" \
-  --primary-metric "eval/ucf101_top1" \
+  --from-expr {parent-slug} \
+  --new-slug {yymmdd}-projector-depth \
+  --parent-ckpt .autoresearch/{parent-slug}/best_ckpt \
+  --goal "Explore projector depth and hidden dim now that the attention block is warm; target downstream top-1." \
+  --mutation-scope "<your_project>.model.projector.Projector,<your_project>.training.losses.YourLoss" \
+  --primary-metric "eval/top1" \
   --primary-direction max \
-  --rationale "Parent expr 260424-loss-ablation established UnifiedLoss λ=0.3 produces stable val/loss=0.821 ... [full paragraph] ..." \
+  --rationale "Parent expr {parent-slug} established loss class with λ=0.3 produces stable val/loss=0.821 ... [full paragraph] ..." \
   --runner inherit \
   --seconds inherit \
   --constraints inherit
@@ -94,11 +94,11 @@ What `chain-init` does on success:
 
 ```json
 {
-  "parent_expr": "260424-loss-ablation",
+  "parent_expr": "{parent-slug}",
   "parent_primary": {"name": "val/loss", "direction": "min", "best_value": 0.821},
-  "child_primary": {"name": "eval/ucf101_top1", "direction": "max"},
+  "child_primary": {"name": "eval/top1", "direction": "max"},
   "child_goal": "Explore projector depth ...",
-  "child_mutation_scope": ["model.projector.Projector", "training.losses.UnifiedLoss"],
+  "child_mutation_scope": ["<your_project>.model.projector.Projector", "<your_project>.training.losses.YourLoss"],
   "rationale": "<the full paragraph composed in step 6c>",
   "parent_report_sha256": "<sha256 hex>",
   "created_at": "2026-04-25T03:47:12Z",

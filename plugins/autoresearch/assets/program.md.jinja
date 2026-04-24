@@ -42,6 +42,30 @@ The following are **read-only** for the agent:
 - **Hard constraints:** none.
 {% endif %}
 
+## Entry point
+
+- **Pattern:** `{{ entry_pattern or 'custom' }}` ({% if entry_pattern == 'argparse-cli' %}wrapper mode — `train.py` runpy-invokes the host's `if __name__ == "__main__"` script{% elif entry_pattern == 'function' %}function mode — `train.py` imports an `main(**kwargs)` entry{% else %}custom — agent is responsible for wiring the host invocation inside `train.py`{% endif %}).
+{% if entry_main_module %}
+- **Main module:** `{{ entry_main_module }}` (executed via `runpy.run_module`, `run_name="__main__"`).
+{% endif %}
+{% if wandb_project %}
+- **wandb project:** `{{ wandb_project }}`
+{% endif %}
+- **Distributed framework:** `{{ distributed_framework or 'accelerate' }}`
+{% if resume_flag_name %}
+- **Resume flag:** `--{{ resume_flag_name }}` (wrapper injects the resolved parent-ckpt path into `CLI_OVERRIDES["{{ resume_flag_name }}"]` when `prepare.resume_ckpt_path()` yields a file).
+{% else %}
+- **Resume flag:** (none declared — parent-ckpt resume via CLI flag is disabled; `AR_RESUME_CKPT` env var is still exported so host scripts may consume it.)
+{% endif %}
+{% if cli_args_dict %}
+- **Baseline CLI args** (agent-editable in `train.py`'s `CLI_OVERRIDES` block):
+{% for k, v in cli_args_dict.items() %}
+  - `{{ k }} = {{ v | tojson }}`
+{% endfor %}
+{% else %}
+- **Baseline CLI args:** (none — `CLI_OVERRIDES` is an empty dict; agent fills in per-run.)
+{% endif %}
+
 ## Runner
 
 - Kind: `{{ runner.kind }}`

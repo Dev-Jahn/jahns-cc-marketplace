@@ -332,6 +332,45 @@ def cmd_init(args: argparse.Namespace) -> int:
     # Preserve the original verbatim string for display / debugging / program.md.
     runner_spec["verbatim"] = args.runner
 
+    # P1: entry-pattern + project-introspection flags. Defaults preserve
+    # legacy `function` behavior when the new flags are not supplied.
+    entry_pattern = getattr(args, "entry_pattern", None) or "custom"
+    if entry_pattern not in {"argparse-cli", "function", "custom"}:
+        print(
+            f"error: --entry-pattern must be one of argparse-cli/function/custom, got {entry_pattern!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    cli_args_dict: dict[str, Any] = {}
+    cli_args_raw = getattr(args, "cli_args_json", None)
+    if cli_args_raw:
+        import json as _json
+
+        if isinstance(cli_args_raw, str):
+            try:
+                cli_args_dict = _json.loads(cli_args_raw)
+            except Exception as e:
+                print(f"error: --cli-args-json not valid JSON: {e}", file=sys.stderr)
+                return 2
+        elif isinstance(cli_args_raw, dict):
+            cli_args_dict = cli_args_raw
+    if not isinstance(cli_args_dict, dict):
+        print("error: --cli-args-json must decode to a JSON object (dict)", file=sys.stderr)
+        return 2
+
+    entry_main_module = getattr(args, "entry_main_module", None)
+    wandb_project = getattr(args, "wandb_project", None)
+    distributed_framework = getattr(args, "distributed_framework", None) or "accelerate"
+    resume_flag_name = getattr(args, "resume_flag_name", None)
+
+    # Serialize CLI overrides as a Python-literal dict for direct paste into
+    # train_wrapper.py.jinja. Using json.dumps gives a valid Python dict
+    # literal for string/number/bool/null values — matches the spec's
+    # "CLI_OVERRIDES = {{ cli_args_json | safe }}" rendering contract.
+    import json as _json
+    cli_args_literal = _json.dumps(cli_args_dict, indent=4, sort_keys=True)
+
     ctx = {
         "expr_slug": args.expr,
         "goal": args.goal,
@@ -350,6 +389,14 @@ def cmd_init(args: argparse.Namespace) -> int:
         or "training.data  # TODO: set to project's dataloader module",
         "initial_params": dict(args.initial_params or {}),
         "run_id": "{{ run_id }}",  # left literal so train.py.jinja can self-expand
+        # P1: new entry-point introspection fields.
+        "entry_pattern": entry_pattern,
+        "entry_main_module": entry_main_module,
+        "cli_args_json": cli_args_literal,
+        "cli_args_dict": cli_args_dict,
+        "wandb_project": wandb_project,
+        "distributed_framework": distributed_framework,
+        "resume_flag_name": resume_flag_name,
     }
 
     _render(env, "program.md.jinja", ctx, expr_dir / "program.md")
@@ -357,7 +404,20 @@ def cmd_init(args: argparse.Namespace) -> int:
     prepare_template = "prepare_full.py.jinja" if args.full_prep else "prepare.py.jinja"
     _render(env, prepare_template, ctx, expr_dir / "prepare.py")
 
-    _render(env, "train.py.jinja", ctx, expr_dir / "train.py")
+    # P2: select train.py template by entry_pattern.
+    #   - argparse-cli -> wrapper mode (runpy.run_module on host entry)
+    #   - function|custom -> legacy function-mode template
+    # See program.md "Entry point" section for the recorded choice.
+    if entry_pattern == "argparse-cli":
+        if not entry_main_module:
+            print(
+                "error: --entry-main-module is required when --entry-pattern=argparse-cli",
+                file=sys.stderr,
+            )
+            return 2
+        _render(env, "train_wrapper.py.jinja", ctx, expr_dir / "train.py")
+    else:
+        _render(env, "train.py.jinja", ctx, expr_dir / "train.py")
 
     # Capture baseline snapshot for revert-to-baseline fallback.
     hist.snapshot_baseline(expr_dir)
@@ -1185,6 +1245,16 @@ def cmd_chain_init(args: argparse.Namespace) -> int:
         loader_module=args.loader_module,
         initial_params=None,
         full_prep=False,
+        # v0.2.0: forward entry-point introspection so chain children inherit
+        # the parent's wrapper-mode config. chain-init exposes these as
+        # optional flags; all None means legacy function-mode rendering, which
+        # preserves 0.1.x chain behavior.
+        entry_pattern=getattr(args, "entry_pattern", None),
+        entry_main_module=getattr(args, "entry_main_module", None),
+        cli_args_json=getattr(args, "cli_args_json", None),
+        wandb_project=getattr(args, "wandb_project", None),
+        distributed_framework=getattr(args, "distributed_framework", None),
+        resume_flag_name=getattr(args, "resume_flag_name", None),
     )
     rc = cmd_init(init_args)
     if rc != 0:
@@ -1345,6 +1415,54 @@ def build_parser() -> argparse.ArgumentParser:
                     help="JSON dict of initial parameters for train.py")
     pi.add_argument("--full-prep", action="store_true",
                     help="use the full-prep prepare.py template (Karpathy style)")
+    # P1: entry-point introspection flags. All optional (None => legacy
+    # function-mode behavior) so existing callers / chain-init keep working.
+    pi.add_argument(
+        "--entry-pattern",
+        choices=["argparse-cli", "function", "custom"],
+        default=None,
+        help=(
+            "shape of the host's training entrypoint. 'argparse-cli' renders "
+            "train_wrapper.py.jinja which runpy-invokes --entry-main-module; "
+            "'function' / 'custom' render the legacy train.py.jinja which "
+            "expects an importable main(**kwargs)."
+        ),
+    )
+    pi.add_argument(
+        "--entry-main-module",
+        default=None,
+        help=(
+            "dotted module path executed via runpy in argparse-cli mode, e.g. "
+            "'your_project.training.main'. The module's `if __name__ == \"__main__\"` "
+            "block runs with sys.argv rebuilt from --cli-args-json."
+        ),
+    )
+    pi.add_argument(
+        "--cli-args-json",
+        default=None,
+        help=(
+            "JSON dict of baseline CLI args the agent starts from, e.g. "
+            "'{\"config\":\"base_flat\",\"learning_rate\":1.5e-4}'. Rendered "
+            "verbatim as CLI_OVERRIDES in train_wrapper.py."
+        ),
+    )
+    pi.add_argument("--wandb-project", default=None,
+                    help="wandb project name; recorded in program.md Entry point section.")
+    pi.add_argument(
+        "--distributed-framework",
+        choices=["accelerate", "deepspeed", "fsdp", "ddp", "none"],
+        default=None,
+        help="distributed framework in use; default 'accelerate'.",
+    )
+    pi.add_argument(
+        "--resume-flag-name",
+        default=None,
+        help=(
+            "argparse flag the host accepts to resume from a checkpoint path "
+            "(e.g. 'resume_from_checkpoint'). When set AND a parent ckpt is "
+            "available, the wrapper injects the resolved path into CLI_OVERRIDES."
+        ),
+    )
     pi.set_defaults(func=cmd_init)
 
     # run
@@ -1394,6 +1512,22 @@ def build_parser() -> argparse.ArgumentParser:
     pc.add_argument("--training-entrypoint", default=None)
     pc.add_argument("--loader-module", default=None)
     pc.add_argument("--auxiliary", nargs="*", default=[])
+    # v0.2.0: wrapper-mode forwarding. Parent typically passes these verbatim
+    # so the child materializes with the same entry-point contract.
+    pc.add_argument(
+        "--entry-pattern",
+        choices=["argparse-cli", "function", "custom"],
+        default=None,
+    )
+    pc.add_argument("--entry-main-module", default=None)
+    pc.add_argument("--cli-args-json", default=None)
+    pc.add_argument("--wandb-project", default=None)
+    pc.add_argument(
+        "--distributed-framework",
+        choices=["accelerate", "deepspeed", "fsdp", "ddp", "none"],
+        default=None,
+    )
+    pc.add_argument("--resume-flag-name", default=None)
     pc.set_defaults(func=cmd_chain_init)
 
     return p

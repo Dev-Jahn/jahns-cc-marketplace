@@ -133,7 +133,7 @@ If `should_terminate == false`: go to step 1.
 
 If `should_terminate == true`:
 
-- If chain mode is disabled, or `chain_remaining == 0`: exit cleanly. The expr is done. Print a one-line summary (e.g. `expr 260424-loss-ablation terminated: plateau(5) — best val/loss=0.812 at r0037`) and stop.
+- If chain mode is disabled, or `chain_remaining == 0`: exit cleanly. The expr is done. Print a one-line summary (e.g. `expr {expr-slug} terminated: plateau(5) — best val/loss=0.812 at r0037`) and stop.
 - If chain mode is enabled and `chain_remaining > 0`: design the next expr and transition. See `references/chain-transition.md` for the full procedure. Core sketch:
   1. `uv run python .autoresearch/ar.py report --expr {current}` → capture markdown summary into context.
   2. Internally reason (no AskUserQuestion): what axis moved the primary metric? what's under-explored? why is this next direction the right one? Compose a one-paragraph `--rationale` explaining that reasoning — this string is persisted verbatim to `chain_decision.json` (read-only, `chmod 0444`) and is the post-hoc audit artifact. Rationale is required; empty rationale aborts `chain-init`.
@@ -168,7 +168,7 @@ Explicit forbidden list:
 - Do not create new files anywhere under `.autoresearch/` or the host project.
 - Do not edit `{expr}/prepare.py`. It is the data/metric contract; changing it silently breaks comparability across runs.
 - Do not edit `{expr}/program.md`, `{expr}/best.json`, `{expr}/results.tsv`, `{expr}/runs/**`, `{expr}/best_ckpt/**`, `{expr}/batch_contract.json`, `.autoresearch/.chain-session.json`, `.autoresearch/{expr}/.ar-session.json`, or any file under `.autoresearch/` other than `{expr}/train.py`.
-- Do not edit **anything** in the host project outside `.autoresearch/`. `model/`, `training/`, `attn/`, config files, pyproject.toml, CLAUDE.md — all read-only.
+- Do not edit **anything** in the host project outside `.autoresearch/`. The project's source tree (e.g. `<your_project>/model/`, `<your_project>/training/`, `<your_project>/attn/`, or whatever the host uses), config files, pyproject.toml, CLAUDE.md — all read-only.
 - Do not `git add`, `git commit`, `git reset`, or touch the working tree's git state. The experiment loop lives entirely outside git.
 - Do not manually touch `runs/{run_id}/state.pt`, `best_ckpt/state.pt`, `best_ckpt/meta.json`, or any wandb artifact.
 
@@ -224,12 +224,12 @@ Steady-state target: **≤ 2 bash invocations per iteration** and **≤ 2-3 `Rea
 
 ## One concrete iteration example
 
-Context: `260424-loss-ablation` expr, primary = `val/loss` (min), current best = 0.851 at r0037.
+Context: `{expr-slug}` expr, primary = `val/loss` (min), current best = 0.851 at r0037.
 
 ```
 # Step 1 — state
 $ uv run python .autoresearch/ar.py status --compact
-expr: 260424-loss-ablation
+expr: {expr-slug}
 primary: val/loss (min) — best: 0.851 @ r0037
 runs: 42 total (18 advance / 21 revert / 3 crash)
 termination: plateau 2/5, max_runs 42/200
@@ -266,7 +266,7 @@ $ uv run python .autoresearch/ar.py run
 
 ```
 # Step 5 — read result
-$ cat .autoresearch/260424-loss-ablation/runs/r0043/result.json
+$ cat .autoresearch/{expr-slug}/runs/r0043/result.json
 # status: ok, verdict: advance, primary.value: 0.844, should_terminate: false
 ```
 

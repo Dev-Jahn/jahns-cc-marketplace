@@ -11,7 +11,7 @@ A single `AskUserQuestion` invocation with six questions, all in one shot. Do no
 - **header**: `Research goal`
 - **question**: `What should this experiment optimize for? Pick a theme or describe a custom one.`
 - **multiSelect**: `false`
-- **options**: 3–4 inferred candidates + `"Other (describe)"` as the last option. Each candidate is a short phrase (≤ 60 chars). Example candidates for a video-LLM project:
+- **options**: 3–4 inferred candidates + `"Other (describe)"` as the last option. Each candidate is a short phrase (≤ 60 chars). Example candidates (generic — real options come from repo analysis):
   - `Improve val/loss via loss-term ablation`
   - `Reduce peak VRAM in attention block`
   - `Explore projector depth`
@@ -27,7 +27,7 @@ A single `AskUserQuestion` invocation with six questions, all in one shot. Do no
 - **options**: top metric candidates from wandb summary scan, labeled with direction:
   - `val/loss (min)`
   - `val/bpb (min)`
-  - `eval/ucf101_top1 (max)`
+  - `eval/top1 (max)`
   - `train/loss (min)`
   - `Other (type metric=direction)`
 - If the user picks "Other", prompt for freeform input as `name=min` or `name=max` — parse accordingly. If direction is ambiguous, re-ask for direction only.
@@ -50,10 +50,10 @@ A single `AskUserQuestion` invocation with six questions, all in one shot. Do no
 - **header**: `Mutation scope`
 - **question**: `Modules / classes train.py may monkey-patch. Advisory only — not enforced in code.`
 - **multiSelect**: `true`
-- **options**: dotted-path candidates from Phase 1, multi-select, with escape hatch:
-  - `training.losses.UnifiedLoss`
-  - `model.attn.NAGLABlock`
-  - `model.projector.Projector`
+- **options**: dotted-path candidates from Phase 1, multi-select, with escape hatch. The paths should be namespaced under the host project's package — e.g. `<your_project>.training.losses.YourLoss`, not bare `training.losses.YourLoss`:
+  - `<your_project>.training.losses.YourLoss`
+  - `<your_project>.model.attn.YourBlock`
+  - `<your_project>.model.projector.Projector`
   - `Other (comma-separated dotted paths)`
   - `(advisory — will skip)`
 - If `(advisory — will skip)` is selected, omit `--mutation-scope` from `ar init`.
@@ -76,8 +76,8 @@ A single `AskUserQuestion` invocation with six questions, all in one shot. Do no
 - **question**: `How should ar launch training? Pick the inferred one or customize.`
 - **multiSelect**: `false`
 - **options**: Phase 1's inferred runner first, then the others, then Custom:
-  - `accelerate launch --config_file configs/accelerate_8gpu.yaml`  (example; use detected config)
-  - `torchrun --nproc-per-node 8`
+  - `accelerate launch --config_file configs/accelerate.yaml`  (example; use the detected DDP config file)
+  - `torchrun --nproc-per-node N`  (substitute the project's actual GPU count)
   - `python`
   - `Custom`
 - The exact string is stored and invoked verbatim by `ar`, so include `--config_file`, `--nproc-per-node`, and similar args.

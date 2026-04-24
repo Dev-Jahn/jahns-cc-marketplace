@@ -2,7 +2,7 @@
 
 Autonomous LLM-research loop for real ML codebases. Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch) but adapted to:
 
-- Editable-install Python projects (`uv`, `pyproject.toml`, packages like `model`, `training`, `attn`)
+- Editable-install Python projects (`uv`, `pyproject.toml`, namespaced packages such as `<your_project>.model`, `<your_project>.training`, etc.)
 - Multi-GPU launchers (`accelerate launch`, `torchrun`)
 - wandb-instrumented training loops
 - Overnight runs of hundreds–thousands of iterations in a single Claude Code session
@@ -42,7 +42,7 @@ See `docs/superpowers/specs/2026-04-24-autoresearch-plugin-design.md` in the [so
 
 ## Verified (Phase 7, 2026-04-24)
 
-End-to-end smoke on a 6× RTX PRO 6000 Blackwell workstation using `accelerate launch --config_file accelerate_6gpu.yaml --num_processes 6` + wandb-online:
+End-to-end smoke on a 6-GPU Blackwell workstation using `accelerate launch --config_file configs/accelerate.yaml` (your DDP config) + wandb-online:
 
 - `ar init` scaffolding across program.md / train.py / prepare.py / results.tsv
 - `ar run` baseline advance (r0001, 24s wall)
@@ -56,7 +56,7 @@ End-to-end smoke on a 6× RTX PRO 6000 Blackwell workstation using `accelerate l
 
 ## Known limitations (v0.1.0)
 
-- `prepare.py.jinja` thin-wrapper template assumes the host project exposes `build_train_loader` / `build_val_loader`. Projects with different loader conventions (pivot's `build_openvid_webdataset`, etc.) need manual prepare.py adaptation after setup, or regeneration once setup skill's interview is extended to ask about loader names.
+- `prepare.py.jinja` thin-wrapper template assumes the host project exposes `build_train_loader` / `build_val_loader`. Projects whose loader factories use different names (e.g. a webdataset-specific builder, an HF `datasets` wrapper, or any other custom factory) need manual prepare.py adaptation after setup, or regeneration once setup skill's interview is extended to ask about loader names.
 - `train.py.jinja` rendered body is a TODO-bearing scaffold; the agent is expected to wire it to the target project's real training entrypoint during the first `/autoresearch:run` iteration. The baseline run does not work out-of-the-box without this step.
 - `prepare_full.py.jinja` (Karpathy-style inline dataset prep) is a placeholder — MVP didn't require it.
 - `plateau(N)` counts only `status=ok` rows; `invalid`/`crash`/`timeout` are excluded from plateau counting so a streak of broken edits doesn't trigger premature termination.

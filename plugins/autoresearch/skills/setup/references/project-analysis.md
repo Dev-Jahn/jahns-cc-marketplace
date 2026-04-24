@@ -57,7 +57,7 @@ For multi-GPU torchrun, extract `nproc-per-node` from:
 Good scope candidates are:
 
 - Classes / functions that the training entrypoint imports directly.
-- Modules under `training/`, `model/`, `losses/`, `optim/`, `attn/` in the target package.
+- Modules under `training/`, `model/`, `losses/`, `optim/`, `attn/` (or whatever the host project calls these subpackages) in the target package.
 - Recently-modified files (`git log --name-only --since="2 weeks ago"`).
 
 Poor candidates (do NOT suggest):
@@ -66,7 +66,7 @@ Poor candidates (do NOT suggest):
 - Anything under `scripts/`, `tests/`, `docs/`.
 - Third-party vendored code (often under `vendor/`, `third_party/`).
 
-Format suggestions as full dotted paths the user can paste: `training.losses.UnifiedLoss`, `model.na_gla_block.NAGLABlock`. Resolve the package name from `pyproject.toml`'s `[project].name` or `[tool.setuptools.packages.find].include`.
+Format suggestions as full dotted paths the user can paste. Prefer the namespaced form — `<your_project>.training.losses.YourLoss`, `<your_project>.model.attn.YourBlock` — since most editable-install Python projects expose their source under a single top-level package named after the project. Resolve the package name from `pyproject.toml`'s `[project].name` or `[tool.setuptools.packages.find].include` (if the project exposes multiple top-level packages like bare `model`/`training`, surface those as-is but flag the layout to the user for confirmation — the more common pattern is a single namespace).
 
 ## Prepare.py mode decision
 
