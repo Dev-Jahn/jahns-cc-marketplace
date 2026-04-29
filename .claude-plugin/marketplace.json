@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/codex-plugin-cc.git",
-        "sha": "f0486bf8dccca5ff1aead89bed503f1d2314b259"
+        "sha": "f8e917f91eb572cadc2e6f062ac10e3069812001"
       },
       "homepage": "https://github.com/Dev-Jahn/codex-plugin-cc",
       "keywords": [
@@ -27,7 +27,7 @@
         "bubblewrap",
         "fork"
       ],
-      "version": "1.0.5-jahn"
+      "version": "1.0.5-jahn.1"
     },
     {
       "name": "autoresearch",
