@@ -7,6 +7,29 @@
   },
   "plugins": [
     {
+      "name": "codex-no-sandbox",
+      "description": "Fork of openai/codex-plugin-cc that disables OS-level sandbox enforcement (read-only / workspace-write / bubblewrap) and replaces it with prompt-level self-enforcement, for environments where unprivileged user/network namespaces are restricted (cloud containers, GPU hosts, kernels without bubblewrap permission).",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/codex-plugin-cc.git",
+        "sha": "7f04d27a0e8be1ae56acc95fc99047c340752db7",
+        "path": "plugins/codex"
+      },
+      "homepage": "https://github.com/Dev-Jahn/codex-plugin-cc",
+      "keywords": [
+        "codex",
+        "openai",
+        "review",
+        "delegation",
+        "no-sandbox",
+        "cloud",
+        "container",
+        "bubblewrap"
+      ],
+      "version": "1.0.4-no-sandbox"
+    },
+    {
       "name": "autoresearch",
       "description": "Autonomous LLM-research loop adapted from Karpathy's autoresearch for real ML codebases (editable-install Python projects, accelerate / torchrun launchers, wandb metrics). Two skills — setup and run — plus an ar helper CLI that owns launch orchestration, wandb binding, atomic checkpoint commit, process-tree-aware timeout, and chain-mode transitions, so the main Claude session stays context-light across hundreds–thousands of iterations.",
       "category": "development",
