@@ -7,13 +7,13 @@
   },
   "plugins": [
     {
-      "name": "codex-no-sandbox",
-      "description": "Fork of openai/codex-plugin-cc that disables OS-level sandbox enforcement (read-only / workspace-write / bubblewrap) and replaces it with prompt-level self-enforcement, for environments where unprivileged user/network namespaces are restricted (cloud containers, GPU hosts, kernels without bubblewrap permission).",
+      "name": "codex",
+      "description": "Personal fork of openai/codex-plugin-cc with OS-level sandbox enforcement removed and replaced with prompt-level self-enforcement, for environments where bubblewrap cannot run (cloud containers, GPU hosts, kernels without unprivileged user/network namespace permission).",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/codex-plugin-cc.git",
-        "sha": "48a393db863040d5a0b9877d4479677fc06b879f"
+        "sha": "f0486bf8dccca5ff1aead89bed503f1d2314b259"
       },
       "homepage": "https://github.com/Dev-Jahn/codex-plugin-cc",
       "keywords": [
@@ -24,9 +24,10 @@
         "no-sandbox",
         "cloud",
         "container",
-        "bubblewrap"
+        "bubblewrap",
+        "fork"
       ],
-      "version": "1.0.4-no-sandbox.1"
+      "version": "1.0.5-jahn"
     },
     {
       "name": "autoresearch",
