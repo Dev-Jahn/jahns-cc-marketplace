@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/codex-plugin-cc.git",
-        "sha": "7f04d27a0e8be1ae56acc95fc99047c340752db7",
+        "sha": "3ecb245e3b0467489f6bb9158172bab8c3461ead",
         "path": "plugins/codex"
       },
       "homepage": "https://github.com/Dev-Jahn/codex-plugin-cc",
