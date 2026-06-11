@@ -7,6 +7,29 @@
   },
   "plugins": [
     {
+      "name": "jahns-workflow",
+      "description": "SSOT-anchored agentic development workflow harness: one global task-naming convention (<type>/<kebab-slug> IDs, blocker/major/minor severities) enforced by a zero-token validator hook, generated Mermaid roadmaps and SSOT digest injection (incl. after compaction), round closeout with external-review packets, review ingestion with verify-then-triage, and scoped tiered SSOT audits. Skills: init / round / review / audit / status.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
+        "sha": "1f85a37a2d68a6cf8532e9d1781e47472efd7103"
+      },
+      "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
+      "keywords": [
+        "workflow",
+        "ssot",
+        "task-registry",
+        "roadmap",
+        "mermaid",
+        "adr",
+        "audit",
+        "review",
+        "agentic-development"
+      ],
+      "version": "0.1.0"
+    },
+    {
       "name": "codex",
       "description": "Personal fork of openai/codex-plugin-cc with OS-level sandbox enforcement removed and replaced with prompt-level self-enforcement, for environments where bubblewrap cannot run (cloud containers, GPU hosts, kernels without unprivileged user/network namespace permission).",
       "category": "development",
