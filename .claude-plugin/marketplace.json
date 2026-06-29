@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "jahns-workflow",
-      "description": "SSOT-anchored agentic development workflow harness: one global task-naming convention (<type>/<kebab-slug> IDs, blocker/major/minor severities) enforced by a zero-token validator hook, generated Mermaid roadmaps and SSOT digest injection (incl. after compaction), round closeout with deterministic SHA-pinned review bundles for a web reviewer (+ a one-time ChatGPT reviewer kit), and review ingestion with bundle-identity cross-check then verify-then-triage. Skills: init / round / review / reviewer-kit / status.",
+      "description": "SSOT-anchored agentic development workflow harness: one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, and verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate).",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
-        "sha": "0b454fec647571e9ecda9eaeac5e0ba5e05fa0e7"
+        "sha": "3bc5af539787b6b9191fba3290b20973fa86f5ef"
       },
       "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
       "keywords": [
