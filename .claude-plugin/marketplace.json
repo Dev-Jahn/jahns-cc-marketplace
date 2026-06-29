@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
-        "sha": "cb1af29b8860000b4544b62318d995b7351fb13a"
+        "sha": "0b454fec647571e9ecda9eaeac5e0ba5e05fa0e7"
       },
       "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
       "keywords": [
@@ -27,7 +27,7 @@
         "review",
         "agentic-development"
       ],
-      "version": "0.4.1"
+      "version": "0.5.0"
     },
     {
       "name": "codex",
