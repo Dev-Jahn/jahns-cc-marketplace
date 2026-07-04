@@ -58,7 +58,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/ccbroker-plugin.git",
-        "sha": "79d40b7409bf606b89d936e77eb30f4e0ea47784"
+        "sha": "d08cb41c48114e59e0653a7e8ca4c766a5bada88"
       },
       "homepage": "https://github.com/Dev-Jahn/ccbroker-plugin",
       "keywords": [
@@ -67,7 +67,7 @@
         "quota",
         "broker"
       ],
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
