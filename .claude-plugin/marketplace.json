@@ -56,18 +56,19 @@
       "description": "Claude account switching, quota status and rotation policy via ccbroker: /ccb-status, /ccb-use, /ccb-auto and /ccb-policy slash commands plus a SessionStart hook that runs 'ccb pull' (requires the ccb binary on PATH).",
       "category": "development",
       "source": {
-        "source": "url",
-        "url": "https://github.com/Dev-Jahn/ccbroker-plugin.git",
-        "sha": "d08cb41c48114e59e0653a7e8ca4c766a5bada88"
+        "source": "git-subdir",
+        "url": "Dev-Jahn/ccbroker",
+        "path": "claude-plugin",
+        "sha": "b1c68ce0f247a0c73df9088a1ab2df777faba7a0"
       },
-      "homepage": "https://github.com/Dev-Jahn/ccbroker-plugin",
+      "homepage": "https://github.com/Dev-Jahn/ccbroker",
       "keywords": [
         "credentials",
         "accounts",
         "quota",
         "broker"
       ],
-      "version": "0.2.0"
+      "version": "0.2.1"
     }
   ]
 }
