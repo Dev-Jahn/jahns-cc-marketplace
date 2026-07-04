@@ -53,7 +53,7 @@
     },
     {
       "name": "ccbroker",
-      "description": "Claude account switching and quota status via cc-cred-broker: /ccb-status, /ccb-use and /ccb-auto slash commands plus a SessionStart hook that runs `ccb pull` (requires the `ccb` binary on PATH).",
+      "description": "Claude account switching, quota status and rotation policy via ccbroker: /ccb-status, /ccb-use, /ccb-auto and /ccb-policy slash commands plus a SessionStart hook that runs 'ccb pull' (requires the ccb binary on PATH).",
       "category": "development",
       "source": {
         "source": "url",
