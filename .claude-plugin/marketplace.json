@@ -59,7 +59,7 @@
         "source": "git-subdir",
         "url": "Dev-Jahn/ccbroker",
         "path": "claude-plugin",
-        "sha": "96b5e46f44ba7b2f62fbb1f7ee64696a5b25fa51"
+        "sha": "c5fe73aa81a11bd858df609b88a659cc17d68a6d"
       },
       "homepage": "https://github.com/Dev-Jahn/ccbroker",
       "keywords": [
@@ -68,7 +68,7 @@
         "quota",
         "broker"
       ],
-      "version": "0.2.1"
+      "version": "0.3.0"
     }
   ]
 }
