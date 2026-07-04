@@ -50,6 +50,24 @@
         "fork"
       ],
       "version": "1.0.5-jahn.1"
+    },
+    {
+      "name": "ccbroker",
+      "description": "Claude account switching and quota status via cc-cred-broker: /ccb-status, /ccb-use and /ccb-auto slash commands plus a SessionStart hook that runs `ccb pull` (requires the `ccb` binary on PATH).",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/ccbroker-plugin.git",
+        "sha": "79d40b7409bf606b89d936e77eb30f4e0ea47784"
+      },
+      "homepage": "https://github.com/Dev-Jahn/ccbroker-plugin",
+      "keywords": [
+        "credentials",
+        "accounts",
+        "quota",
+        "broker"
+      ],
+      "version": "0.1.0"
     }
   ]
 }
