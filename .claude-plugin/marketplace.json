@@ -69,6 +69,26 @@
         "broker"
       ],
       "version": "0.3.1"
+    },
+    {
+      "name": "ezsub",
+      "description": "Lightweight scoped string substitution: replace A with B in lines, line ranges, markdown sections, files, or directories",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/ezsub.git",
+        "sha": "c16c617dcf6ce964fc9a41e87852c86833db3c59"
+      },
+      "homepage": "https://github.com/Dev-Jahn/ezsub",
+      "keywords": [
+        "substitution",
+        "find-and-replace",
+        "sed",
+        "refactor",
+        "text",
+        "skill"
+      ],
+      "version": "0.1.0"
     }
   ]
 }
