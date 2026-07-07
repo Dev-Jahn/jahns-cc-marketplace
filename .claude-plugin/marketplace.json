@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "jahns-workflow",
-      "description": "SSOT-anchored agentic development workflow harness: one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, and verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate).",
+      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, and verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate).",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
-        "sha": "3bc5af539787b6b9191fba3290b20973fa86f5ef"
+        "sha": "eb62b1ad95782bce87ff8132ad958a67e0f11103"
       },
       "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
       "keywords": [
@@ -26,7 +26,7 @@
         "review",
         "agentic-development"
       ],
-      "version": "0.5.0"
+      "version": "0.6.0"
     },
     {
       "name": "codex",
