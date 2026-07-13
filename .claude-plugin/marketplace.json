@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "jahns-workflow",
-      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, and verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate).",
+      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate), and /improve: an advisory report mined from your actual Claude Code session history and review evidence — deterministic trace/audit with provenance-labeled facts, recommendations you accept or reject (recorded, never auto-applied).",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
-        "sha": "924466119a9ff7170f16a79f04466c178dc08fb9"
+        "sha": "1dade279ef0ad66334537828a6b53fb0cd57e137"
       },
       "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
       "keywords": [
@@ -26,7 +26,7 @@
         "review",
         "agentic-development"
       ],
-      "version": "0.6.0"
+      "version": "0.7.0"
     },
     {
       "name": "codex",
