@@ -7,15 +7,15 @@
   },
   "plugins": [
     {
-      "name": "jahns-workflow",
-      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate), /improve: an advisory report mined from your actual Claude Code session history and review evidence — deterministic trace/audit with provenance-labeled facts, recommendations you accept or reject (recorded, never auto-applied) — and jw delegate: deterministic external delegation (immutable dirty-tree snapshot base, dedicated worktrees, reproducible env prep, codex-backed runner, structured artifact contracts, independent codex-companion verification on the same base) plus project-local adaptive overlays with shadow replay, non-blocking boundary warnings, evidence projection, and a runtime-injected main operating contract.",
+      "name": "waystone",
+      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate), /improve: an advisory report mined from your actual Claude Code session history and review evidence — deterministic trace/audit with provenance-labeled facts, recommendations you accept or reject (recorded, never auto-applied) — and waystone delegate: deterministic external delegation (immutable dirty-tree snapshot base, dedicated worktrees, reproducible env prep, codex-backed runner, structured artifact contracts, independent codex-companion verification on the same base) plus project-local adaptive overlays with shadow replay, non-blocking boundary warnings, evidence projection, and a runtime-injected main operating contract.",
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/Dev-Jahn/jahns-workflow.git",
+        "url": "https://github.com/Dev-Jahn/waystone.git",
         "sha": "7a9c67aaa32495b3a5a01fbf98a5155326024ef6"
       },
-      "homepage": "https://github.com/Dev-Jahn/jahns-workflow",
+      "homepage": "https://github.com/Dev-Jahn/waystone",
       "keywords": [
         "workflow",
         "ssot",
@@ -24,6 +24,7 @@
         "mermaid",
         "adr",
         "review",
+        "delegation",
         "agentic-development"
       ],
       "version": "0.8.0"
