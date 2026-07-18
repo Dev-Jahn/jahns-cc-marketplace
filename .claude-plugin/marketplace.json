@@ -78,7 +78,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/ezsub.git",
-        "sha": "863e9c2dbbce71eb63cd3409a3b7adbf9077023f"
+        "sha": "d2052e984b380061bfc7a95b53412d9c6c2bb949"
       },
       "homepage": "https://github.com/Dev-Jahn/ezsub",
       "keywords": [
@@ -89,7 +89,7 @@
         "text",
         "skill"
       ],
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
