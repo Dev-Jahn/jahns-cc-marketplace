@@ -7,7 +7,7 @@
   },
   "plugins": [
     {
-      "name": "waystone",
+      "name": "ws",
       "description": "A quiet project organ: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
       "category": "development",
       "source": {
