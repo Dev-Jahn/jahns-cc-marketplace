@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "ws",
-      "description": "A quiet project organ: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
+      "description": "waystone — a quiet project organ: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/waystone.git",
-        "sha": "fb9bf089a265c5b8334167f9bf7fd7879fe8df9c"
+        "sha": "045de8cd273932d9226aacb3819a57dad601e3c4"
       },
       "homepage": "https://github.com/Dev-Jahn/waystone",
       "keywords": [
@@ -27,7 +27,7 @@
         "delegation",
         "agentic-development"
       ],
-      "version": "1.0.2"
+      "version": "1.1.0"
     },
     {
       "name": "codex",
