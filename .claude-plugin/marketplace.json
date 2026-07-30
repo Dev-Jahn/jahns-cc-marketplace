@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/waystone.git",
-        "sha": "f2d16a592bc48857781701c387e5ffa0088bc16c"
+        "sha": "fb9bf089a265c5b8334167f9bf7fd7879fe8df9c"
       },
       "homepage": "https://github.com/Dev-Jahn/waystone",
       "keywords": [
@@ -27,7 +27,7 @@
         "delegation",
         "agentic-development"
       ],
-      "version": "1.0.1"
+      "version": "1.0.2"
     },
     {
       "name": "codex",
