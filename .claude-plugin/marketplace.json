@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "waystone",
-      "description": "SSOT-anchored agentic development workflow harness: Socratic project ideation that forges the north-star SSOT, one-click project setup, a structured task-registry CLI (read/mutate/archive without slurping the file) with a global naming convention, zero-token roadmap rendering, round closeout, a per-round markdown review request for an external reviewer that reads the repo over git, verbatim review ingestion (plus an optional SHA-bound PR review-cycle merge gate), /improve: an advisory report mined from your actual Claude Code session history and review evidence — deterministic trace/audit with provenance-labeled facts, recommendations you accept or reject (recorded, never auto-applied) — and waystone delegate: deterministic external delegation (immutable dirty-tree snapshot base, dedicated worktrees, reproducible env prep, codex-backed runner, structured artifact contracts, independent codex-exec verification on the same base) plus project-local adaptive overlays with shadow replay, non-blocking boundary warnings, evidence projection, and a runtime-injected main operating contract.",
+      "description": "A quiet project organ: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/waystone.git",
-        "sha": "a3db9b511a0c15dffbcd9e1457c1d0e69374bf4b"
+        "sha": "4d3e4136102455f93e9ed21d9fdef26da37b745a"
       },
       "homepage": "https://github.com/Dev-Jahn/waystone",
       "keywords": [
@@ -27,7 +27,7 @@
         "delegation",
         "agentic-development"
       ],
-      "version": "0.11.1"
+      "version": "1.0.0"
     },
     {
       "name": "codex",
