@@ -12,7 +12,7 @@
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/Dev-Jahn/hippo.git",
+        "url": "https://github.com/Dev-Jahn/hippocampus.git",
         "sha": "ec2b679766d7b0b17768f6898297bade49b89c02"
       },
       "homepage": "https://github.com/Dev-Jahn/hippo",
