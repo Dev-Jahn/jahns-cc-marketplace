@@ -8,12 +8,12 @@
   "plugins": [
     {
       "name": "hippo",
-      "description": "hippo — your project's hippocampus: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
+      "description": "hippocampus — perception and memory for coding agents: task registry, outcome ledger, and background clerks that turn transcripts into evidence. Records; never enforces. CLI and slash commands are `hippo`.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/hippocampus.git",
-        "sha": "ec2b679766d7b0b17768f6898297bade49b89c02"
+        "sha": "56fc37a7f9e4d44ec556ccc14ff565bf30cc0c88"
       },
       "homepage": "https://github.com/Dev-Jahn/hippo",
       "keywords": [
@@ -25,7 +25,7 @@
         "evidence",
         "agentic-development"
       ],
-      "version": "1.4.1"
+      "version": "1.4.2"
     },
     {
       "name": "codex",
