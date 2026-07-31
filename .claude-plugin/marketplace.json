@@ -7,24 +7,22 @@
   },
   "plugins": [
     {
-      "name": "ws",
-      "description": "waystone — a quiet project organ: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
+      "name": "hippo",
+      "description": "hippo — your project's hippocampus: task registry, outcome ledger, and background clerks that give agents perception and memory — evidence over enforcement.",
       "category": "development",
       "source": {
         "source": "url",
-        "url": "https://github.com/Dev-Jahn/waystone.git",
+        "url": "https://github.com/Dev-Jahn/hippo.git",
         "sha": "045de8cd273932d9226aacb3819a57dad601e3c4"
       },
-      "homepage": "https://github.com/Dev-Jahn/waystone",
+      "homepage": "https://github.com/Dev-Jahn/hippo",
       "keywords": [
-        "workflow",
-        "ssot",
+        "hippocampus",
+        "memory",
         "task-registry",
-        "roadmap",
-        "mermaid",
-        "adr",
-        "review",
-        "delegation",
+        "ledger",
+        "clerk",
+        "evidence",
         "agentic-development"
       ],
       "version": "1.1.0"
