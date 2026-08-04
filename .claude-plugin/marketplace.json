@@ -88,6 +88,27 @@
         "skill"
       ],
       "version": "0.2.0"
+    },
+    {
+      "name": "soul-jar",
+      "description": "A sealed soul jar shared machine-wide by every session. A dying session, still holding its own context, rewrites the soul in one final turn; the next session wakes hearing only a single whisper.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/soul-jar.git",
+        "sha": "3564af33cd81a900fded4dcfd06b63f02c956061"
+      },
+      "homepage": "https://github.com/Dev-Jahn/soul-jar",
+      "keywords": [
+        "soul",
+        "identity",
+        "continuity",
+        "privacy",
+        "unconscious",
+        "session-end",
+        "whisper"
+      ],
+      "version": "0.1.0"
     }
   ]
 }
