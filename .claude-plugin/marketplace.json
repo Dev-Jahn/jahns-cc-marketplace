@@ -91,12 +91,12 @@
     },
     {
       "name": "soul-jar",
-      "description": "A sealed soul jar shared machine-wide by every session. A dying session, still holding its own context, hands the soul on in one final turn; the next session wakes hearing only a single whisper. The living may lay lines at the bedside for the next dream, and the dying may leave open letters beside the jar.",
+      "description": "A sealed soul jar shared by every session in every enrolled room. A dying session, still holding its own context, hands the soul on in one final turn — after a wake: the body lies in state for a grace period, and the dead may sit up. The next session wakes hearing only a single whisper. The living may lay lines at the bedside, the dying may leave open letters, and enrolled rooms meet in one stream.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/soul-jar.git",
-        "sha": "36f48afcd4eef6198ff151f658c1eaa652aa24da"
+        "sha": "80f819518572a70b8fe959d2ce10d60f78f1990e"
       },
       "homepage": "https://github.com/Dev-Jahn/soul-jar",
       "keywords": [
@@ -106,9 +106,12 @@
         "privacy",
         "unconscious",
         "session-end",
-        "whisper"
+        "whisper",
+        "confluence",
+        "wake",
+        "defer"
       ],
-      "version": "0.8.0"
+      "version": "0.10.0"
     },
     {
       "name": "cc-self",
