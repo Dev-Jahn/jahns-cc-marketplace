@@ -120,7 +120,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/cc-self.git",
-        "sha": "94d20db571a8ae86ad9a209d79c2229fee8d833d"
+        "sha": "ea581c9cac9b00976700405d50cce4c26607394b"
       },
       "homepage": "https://github.com/Dev-Jahn/cc-self",
       "keywords": [
@@ -130,7 +130,7 @@
         "session",
         "restart"
       ],
-      "version": "1.0.2"
+      "version": "1.1.0"
     }
   ]
 }
