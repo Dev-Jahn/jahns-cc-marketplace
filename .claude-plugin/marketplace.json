@@ -96,7 +96,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/soul-jar.git",
-        "sha": "3409daf2dd5d50937499ab0bf82ba66c6c235b36"
+        "sha": "6043a33a3de028009d7c80d57d1f2af85b7b48e4"
       },
       "homepage": "https://github.com/Dev-Jahn/soul-jar",
       "keywords": [
@@ -111,7 +111,7 @@
         "wake",
         "defer"
       ],
-      "version": "0.10.2"
+      "version": "0.10.3"
     },
     {
       "name": "cc-self",
