@@ -114,6 +114,28 @@
       "version": "0.10.4"
     },
     {
+      "name": "khala",
+      "description": "Khala last mile for the khala-network session mail: SessionStart drains the session inbox and ensures the node link, Stop repairs watch armament for opted-in identities, and the khala skill documents safe operation. Requires the khala CLI installed separately (see repo README).",
+      "category": "development",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Dev-Jahn/khala-network",
+        "path": "plugin",
+        "sha": "3c026d57477ce66ff6a2e2a778a49162d9a5563d"
+      },
+      "homepage": "https://github.com/Dev-Jahn/khala-network",
+      "keywords": [
+        "khala",
+        "messaging",
+        "mailbox",
+        "cross-machine",
+        "session",
+        "fleet",
+        "store-and-forward"
+      ],
+      "version": "0.1.0"
+    },
+    {
       "name": "cc-self",
       "description": "Self-control for Claude Code sessions running in tmux: type slash commands into your own TUI, answer your own dialogs, observe your own screen, and restart yourself in place.",
       "category": "development",
