@@ -154,6 +154,24 @@
         "restart"
       ],
       "version": "1.1.2"
+    },
+    {
+      "name": "chatgpt",
+      "description": "Neutral command-line bridge from Claude Code to a logged-in ChatGPT Pro browser session.",
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/chatgpt.git",
+        "sha": "d832d64e1f46dc550a5fb871358a2191bc0fd856"
+      },
+      "homepage": "https://github.com/Dev-Jahn/chatgpt",
+      "keywords": [
+        "chatgpt",
+        "browser-automation",
+        "delegation",
+        "reasoning"
+      ],
+      "version": "0.1.0"
     }
   ]
 }
