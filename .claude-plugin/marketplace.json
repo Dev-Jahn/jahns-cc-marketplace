@@ -121,7 +121,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "e10bc0ede6b21eb333bc111d84787d0a813bbe92"
+        "sha": "9dcc99249100db7b3ec36b6f6ca6b1a0e1106066"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -133,7 +133,7 @@
         "fleet",
         "store-and-forward"
       ],
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
       "name": "cc-self",
