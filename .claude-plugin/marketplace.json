@@ -115,13 +115,13 @@
     },
     {
       "name": "khala",
-      "description": "Khala last mile for the khala-network session mail: SessionStart drains the session inbox and ensures the node link, Stop repairs watch armament for opted-in identities, and the khala skill documents safe operation. Requires the khala CLI installed separately (see repo README).",
+      "description": "Khala last mile for the khala-network session mail: bundles the khala CLI and keeps ~/.local/bin/khala installed, SessionStart drains the session inbox and ensures the node link, Stop repairs watch armament for opted-in identities, and the khala skill documents safe operation.",
       "category": "development",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "3c026d57477ce66ff6a2e2a778a49162d9a5563d"
+        "sha": "e10bc0ede6b21eb333bc111d84787d0a813bbe92"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -133,7 +133,7 @@
         "fleet",
         "store-and-forward"
       ],
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
       "name": "cc-self",
