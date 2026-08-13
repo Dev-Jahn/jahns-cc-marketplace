@@ -58,7 +58,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/ccbroker",
         "path": "claude-plugin",
-        "sha": "f907b26723c1bf1e46915027b1fe57051e0f69c3"
+        "sha": "8e681d21135e5c02b1ef80bc6baebcd18cf6dc09"
       },
       "homepage": "https://github.com/Dev-Jahn/ccbroker",
       "keywords": [
@@ -67,7 +67,7 @@
         "quota",
         "broker"
       ],
-      "version": "0.4.2"
+      "version": "0.4.3"
     },
     {
       "name": "ezsub",
