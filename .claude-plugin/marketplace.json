@@ -121,7 +121,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "f453a7522e48d369280fec37abc06704dee5139b"
+        "sha": "aeccf6a3bd69efca9125527f13a8c68c460c0600"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
