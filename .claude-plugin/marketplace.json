@@ -121,7 +121,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "aeccf6a3bd69efca9125527f13a8c68c460c0600"
+        "sha": "7b7ea0b59143efae61773fad7bd0426d9c240847"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -135,7 +135,7 @@
         "streams",
         "minds"
       ],
-      "version": "0.4.0"
+      "version": "0.4.2"
     },
     {
       "name": "cc-self",
