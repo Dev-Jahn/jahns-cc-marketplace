@@ -115,13 +115,13 @@
     },
     {
       "name": "khala",
-      "description": "Khala last mile for khala-network session mail, streams, and minds: bundles the khala CLI and keeps ~/.local/bin/khala installed, SessionStart drains mail and joined streams, declares the session profile, and ensures the node link; Stop repairs watch armament; the khala skill documents letters, streams, and the three-tier self.",
+      "description": "Khala last mile for khala-network session mail, streams, and minds: bundles the khala CLI and keeps ~/.local/bin/khala installed (forward-only), SessionStart binds the session identity, drains mail, and runs khala node ensure so the node conduit rings this session's Claude Code inbox socket when letters land — sessions arm nothing; the khala skill documents letters, streams, minds, and the conduit doorbell.",
       "category": "development",
       "source": {
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "7b7ea0b59143efae61773fad7bd0426d9c240847"
+        "sha": "b2925db6b36214c05a46cc08eaa1c8bc95f7a0e0"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -133,9 +133,11 @@
         "fleet",
         "store-and-forward",
         "streams",
-        "minds"
+        "minds",
+        "conduit",
+        "doorbell"
       ],
-      "version": "0.4.2"
+      "version": "0.5.0"
     },
     {
       "name": "cc-self",
