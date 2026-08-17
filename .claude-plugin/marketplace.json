@@ -146,7 +146,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/cc-self.git",
-        "sha": "df2d2f86a4e353acd228a1e06e587d114f3fe90d"
+        "sha": "118f2fb4cdf036ecf9606b274bcc4788a28f6a37"
       },
       "homepage": "https://github.com/Dev-Jahn/cc-self",
       "keywords": [
@@ -156,7 +156,7 @@
         "session",
         "restart"
       ],
-      "version": "1.1.4"
+      "version": "1.1.5"
     },
     {
       "name": "chatgpt",
