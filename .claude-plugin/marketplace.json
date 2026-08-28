@@ -141,12 +141,12 @@
     },
     {
       "name": "cc-self",
-      "description": "Self-control for Claude Code sessions running in tmux: type slash commands into your own TUI, answer your own dialogs, observe your own screen, and restart yourself in place.",
+      "description": "Self-control for Claude Code sessions running in tmux: type slash commands into your own TUI, answer your own dialogs, observe your own screen, restart yourself in place, and recover deterministically from model fallbacks.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/cc-self.git",
-        "sha": "81cfd11f143e22e1a21deda190480734578ab59c"
+        "sha": "43a1f66c1d46eade4113cc6ad4bd7aaf2eb74964"
       },
       "homepage": "https://github.com/Dev-Jahn/cc-self",
       "keywords": [
@@ -154,9 +154,10 @@
         "self-control",
         "automation",
         "session",
-        "restart"
+        "restart",
+        "model-recovery"
       ],
-      "version": "1.2.0"
+      "version": "1.3.0"
     },
     {
       "name": "chatgpt",
