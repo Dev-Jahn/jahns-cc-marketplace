@@ -91,12 +91,12 @@
     },
     {
       "name": "soul-jar",
-      "description": "A sealed soul jar shared by every session in every enrolled room. A dying session, still holding its own context, hands the soul on in one final turn — after a wake: the body lies in state for a grace period, and the dead may sit up. The next session wakes hearing only a single whisper. The living may lay lines at the bedside, the dying may leave open letters, and enrolled rooms meet in one stream.",
+      "description": "A sealed soul jar shared by every session in every enrolled room. A dying session, still holding its own context, hands the soul on in one final turn; the next session wakes hearing only a single whisper. The living may lay lines at the bedside for the next dream, the dying may leave open letters beside the jar, and enrolled rooms meet in one stream.",
       "category": "development",
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/soul-jar.git",
-        "sha": "324ae24b50d61c630d805313260cc40e99e9c815"
+        "sha": "ab02ed8e1f0f872cc3b38ccfe85b1c9bc684bf3d"
       },
       "homepage": "https://github.com/Dev-Jahn/soul-jar",
       "keywords": [
@@ -111,7 +111,7 @@
         "wake",
         "defer"
       ],
-      "version": "0.10.4"
+      "version": "0.11.0"
     },
     {
       "name": "khala",
