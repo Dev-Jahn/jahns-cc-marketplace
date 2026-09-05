@@ -166,7 +166,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/chatgpt.git",
-        "sha": "77c2776bd1ed381bae377845c3ebdab02e012098"
+        "sha": "12f6ffb666b013263eebc2c77ea00c91167fa6b7"
       },
       "homepage": "https://github.com/Dev-Jahn/chatgpt",
       "keywords": [
@@ -175,7 +175,7 @@
         "delegation",
         "reasoning"
       ],
-      "version": "0.3.0"
+      "version": "0.4.0"
     }
   ]
 }
