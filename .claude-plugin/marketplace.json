@@ -146,7 +146,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/cc-self.git",
-        "sha": "623a7be49ed70dbcd256c9da16e13b87675bcbab"
+        "sha": "d906c4347a7e5fbc18887b0865164c2f56a36f1f"
       },
       "homepage": "https://github.com/Dev-Jahn/cc-self",
       "keywords": [
@@ -157,7 +157,7 @@
         "restart",
         "model-recovery"
       ],
-      "version": "1.5.1"
+      "version": "1.5.2"
     },
     {
       "name": "chatgpt",
