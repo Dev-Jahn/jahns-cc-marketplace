@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/hippocampus.git",
-        "sha": "fc365813dbef56b92366a10829d68f5e2b0df089"
+        "sha": "09eec7c8556db9e93aa86e1af338fffcad1a38cf"
       },
       "homepage": "https://github.com/Dev-Jahn/hippo",
       "keywords": [
@@ -25,7 +25,7 @@
         "evidence",
         "agentic-development"
       ],
-      "version": "1.12.3"
+      "version": "1.12.4"
     },
     {
       "name": "codex",
