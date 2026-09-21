@@ -176,6 +176,29 @@
         "reasoning"
       ],
       "version": "0.4.1"
+    },
+    {
+      "name": "hwp-hwpx-editor",
+      "description": "Format-aware HWP/HWPX document editing for coding agents: inspect, edit (text, native bullets, tables, pictures, character and paragraph formatting), render, and validate Hancom documents without converting them to another format. Ships hwp, hwp_native, and hwpx MCP servers, a copy-first editing skill, and guard hooks. Requires Node 20+, uvx, and cargo for the one-time patched engine build.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/hwp-hwpx-editor.git",
+        "sha": "0a3fb6585d5144310bb6088bf92bf2007cb8438b"
+      },
+      "homepage": "https://github.com/Dev-Jahn/hwp-hwpx-editor",
+      "keywords": [
+        "hwp",
+        "hwpx",
+        "hancom",
+        "document",
+        "editor",
+        "render",
+        "validate",
+        "mcp",
+        "korean"
+      ],
+      "version": "0.1.1"
     }
   ]
 }
