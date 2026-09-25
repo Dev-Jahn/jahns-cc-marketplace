@@ -166,7 +166,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/chatgpt.git",
-        "sha": "24812e75e064f2e662afba34105cabb158744f52"
+        "sha": "75194281fd288aa18f7f439d5f3b47b6f6ff3492"
       },
       "homepage": "https://github.com/Dev-Jahn/chatgpt",
       "keywords": [
@@ -175,7 +175,7 @@
         "delegation",
         "reasoning"
       ],
-      "version": "0.4.1"
+      "version": "0.5.0"
     },
     {
       "name": "hwp-hwpx-editor",
