@@ -199,6 +199,27 @@
         "korean"
       ],
       "version": "0.1.1"
+    },
+    {
+      "name": "jahns-stl",
+      "description": "Simplified Technical Language for LLM agents: one skill that keeps reports, plans, design documents, and instructions free of invented jargon and easy to read, in any language.",
+      "category": "productivity",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Dev-Jahn/jahns-stl.git",
+        "sha": "488fb8b150673fcda66c8bdcdc65f34d5a49d802"
+      },
+      "homepage": "https://github.com/Dev-Jahn/jahns-stl",
+      "keywords": [
+        "writing",
+        "plain-language",
+        "technical-writing",
+        "readability",
+        "jargon",
+        "style-guide",
+        "skill"
+      ],
+      "version": "0.1.0"
     }
   ]
 }

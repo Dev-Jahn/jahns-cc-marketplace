@@ -10,6 +10,9 @@ Personal Claude Code plugin marketplace (Dev-Jahn).
 - **codex** — Fork of `openai/codex-plugin-cc` with OS-level sandboxing replaced by prompt-level
   self-enforcement, for environments where bubblewrap can't run (cloud containers, GPU hosts).
   [repo](https://github.com/Dev-Jahn/codex-plugin-cc)
+- **jahns-stl** — Simplified Technical Language for LLM agents: one skill that keeps reports,
+  plans, design documents, and instructions free of invented jargon and easy to read, in any
+  language. [repo](https://github.com/Dev-Jahn/jahns-stl)
 
 ## Install
 
