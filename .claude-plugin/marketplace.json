@@ -207,7 +207,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/jahns-stl.git",
-        "sha": "28c0f2734832f5b58b416383fbf366b9d7e7a6cc"
+        "sha": "6bd8127659d23edc930fdc9ee247cbce32f8eba7"
       },
       "homepage": "https://github.com/Dev-Jahn/jahns-stl",
       "keywords": [
@@ -219,7 +219,7 @@
         "style-guide",
         "skill"
       ],
-      "version": "0.1.0"
+      "version": "0.1.1"
     }
   ]
 }
