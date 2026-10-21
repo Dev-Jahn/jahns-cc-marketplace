@@ -13,7 +13,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Dev-Jahn/hippocampus.git",
-        "sha": "e26f734ce1c670789297f14fe8a84a03c40fb6f1"
+        "sha": "69dc6775d7402723a3ea061a1fd8086bdfd205c6"
       },
       "homepage": "https://github.com/Dev-Jahn/hippo",
       "keywords": [
@@ -25,7 +25,7 @@
         "evidence",
         "agentic-development"
       ],
-      "version": "1.16.0"
+      "version": "1.17.0"
     },
     {
       "name": "codex",
@@ -121,7 +121,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "dc882ddafa025f34eb05c0936fb9244d9ed3715c"
+        "sha": "90a077456802282241a76d2b4662b6a0f4749fce"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -137,7 +137,7 @@
         "conduit",
         "doorbell"
       ],
-      "version": "0.9.10"
+      "version": "0.9.11"
     },
     {
       "name": "cc-self",
