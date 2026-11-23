@@ -121,7 +121,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Dev-Jahn/khala-network",
         "path": "plugin",
-        "sha": "32ea6a64bcdc4bd2ffebc2c6d928f9d888ee1e49"
+        "sha": "b5bf1504cb2ab0989fe6df80208e88f6d183d21d"
       },
       "homepage": "https://github.com/Dev-Jahn/khala-network",
       "keywords": [
@@ -137,7 +137,7 @@
         "conduit",
         "doorbell"
       ],
-      "version": "0.9.12"
+      "version": "0.9.13"
     },
     {
       "name": "cc-self",
